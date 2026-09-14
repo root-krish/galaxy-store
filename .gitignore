@@ -1,0 +1,5 @@
+/storage/data.json
+/storage/*.lock
+/storage/*.log
+.DS_Store
+Thumbs.db
