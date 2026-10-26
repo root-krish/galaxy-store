@@ -1,4 +1,4 @@
--- Sports Galaxy / production MySQL 8+ schema
+-- Sports Galaxy / reference MySQL 8+ schema (not used by the JSON runtime)
 -- Import this file in phpMyAdmin or with: mysql -u root -p < database/schema.sql
 
 CREATE DATABASE IF NOT EXISTS sports_galaxy
@@ -13,7 +13,8 @@ CREATE TABLE IF NOT EXISTS users (
   email VARCHAR(190) NOT NULL UNIQUE,
   phone VARCHAR(30) NOT NULL,
   password_hash VARCHAR(255) NOT NULL,
-  role ENUM('customer', 'admin', 'delivery_partner') NOT NULL DEFAULT 'customer',
+  profile_image VARCHAR(255) NULL,
+  role ENUM('customer', 'admin', 'delivery') NOT NULL DEFAULT 'customer',
   is_active TINYINT(1) NOT NULL DEFAULT 1,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -88,6 +89,7 @@ CREATE TABLE IF NOT EXISTS orders (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   order_number VARCHAR(40) NOT NULL UNIQUE,
   tracking_code VARCHAR(50) NOT NULL UNIQUE,
+  delivery_code CHAR(6) NOT NULL,
   user_id BIGINT UNSIGNED NOT NULL,
   recipient_name VARCHAR(120) NOT NULL,
   recipient_phone VARCHAR(30) NOT NULL,
@@ -103,6 +105,7 @@ CREATE TABLE IF NOT EXISTS orders (
   payment_method ENUM('cod', 'upi', 'card') NOT NULL,
   payment_status ENUM('pending', 'paid', 'failed', 'refunded') NOT NULL DEFAULT 'pending',
   order_status ENUM('placed', 'confirmed', 'packed', 'assigned', 'out_for_delivery', 'delivered', 'cancelled') NOT NULL DEFAULT 'placed',
+  cancellation_reason VARCHAR(500) NULL,
   delivery_partner_id BIGINT UNSIGNED NULL,
   placed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -119,6 +122,7 @@ CREATE TABLE IF NOT EXISTS order_items (
   product_id BIGINT UNSIGNED NULL,
   sku_snapshot VARCHAR(64) NOT NULL,
   product_name_snapshot VARCHAR(180) NOT NULL,
+  image_path_snapshot VARCHAR(255) NULL,
   unit_price DECIMAL(12,2) NOT NULL,
   unit_cost DECIMAL(12,2) NOT NULL,
   quantity INT NOT NULL,
@@ -164,6 +168,7 @@ CREATE TABLE IF NOT EXISTS inventory_movements (
 CREATE TABLE IF NOT EXISTS delivery_events (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   order_id BIGINT UNSIGNED NOT NULL,
+  cancellation_reason VARCHAR(500) NULL,
   delivery_partner_id BIGINT UNSIGNED NULL,
   status ENUM('placed', 'confirmed', 'packed', 'assigned', 'out_for_delivery', 'delivered', 'cancelled') NOT NULL,
   location_note VARCHAR(180) NULL,
@@ -205,4 +210,18 @@ CREATE TABLE IF NOT EXISTS settings (
   setting_key VARCHAR(100) PRIMARY KEY,
   setting_value VARCHAR(255) NOT NULL,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+-- External income is independent of product sales and contributes to monthly profit.
+CREATE TABLE IF NOT EXISTS incomes (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  income_date DATE NOT NULL,
+  category VARCHAR(100) NOT NULL,
+  description VARCHAR(255) NOT NULL,
+  amount DECIMAL(12,2) NOT NULL,
+  recorded_by BIGINT UNSIGNED NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_income_actor FOREIGN KEY (recorded_by) REFERENCES users(id) ON DELETE SET NULL,
+  CONSTRAINT chk_income_amount CHECK (amount > 0),
+  INDEX idx_income_date (income_date)
 ) ENGINE=InnoDB;

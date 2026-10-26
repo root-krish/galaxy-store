@@ -1,5 +1,7 @@
 Options -Indexes
-
-<FilesMatch "\.(json|sql|log)$">
+DirectoryIndex index.php
+RewriteEngine On
+RewriteRule ^(?:app|storage|database|tests)(?:/|$) - [F,L,NC]
+<FilesMatch "(^\.|\.(json|sql|log|md)$|^router\.php$)">
     Require all denied
 </FilesMatch>

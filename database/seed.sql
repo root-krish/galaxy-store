@@ -13,7 +13,7 @@ INSERT IGNORE INTO categories (id, name, slug, icon) VALUES
 INSERT IGNORE INTO users (id, name, email, phone, password_hash, role) VALUES
   (1, 'Aarav Mehta', 'admin@sportsgalaxy.local', '+91 98765 40001', '$2y$12$DoYZldBW2fh/neh/o1uU/OTytihUI2dR58iyANXeDvWwT9Y7Vqlca', 'admin'),
   (2, 'Ananya Roy', 'customer@sportsgalaxy.local', '+91 98765 40002', '$2y$12$xpu4PxqW1D/h8ElXBQTIJO4QM1pYEpGbdH6ZivYAZsW92B7/okMKW', 'customer'),
-  (3, 'Rohan Das', 'delivery@sportsgalaxy.local', '+91 98765 40003', '$2y$12$0Zdv9eIS1xAsyJWO1B4Pn.kkPzVnV0zqlqP5BLpqwt1kXM9zcGDZS', 'delivery_partner');
+  (3, 'Rohan Das', 'delivery@sportsgalaxy.local', '+91 98765 40003', '$2y$12$0Zdv9eIS1xAsyJWO1B4Pn.kkPzVnV0zqlqP5BLpqwt1kXM9zcGDZS', 'delivery');
 
 INSERT IGNORE INTO products
   (id, category_id, sku, slug, name, brand, description, cost_price, selling_price, stock_qty, min_stock_qty, expected_restock_date, is_featured)

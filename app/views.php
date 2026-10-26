@@ -11,9 +11,10 @@ function render_header(string $title, string $page): void
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#08131d">
-    <title><?= h($title) ?> · <?= h(SG_NAME) ?></title>
+    <meta name="theme-color" content="<?= h(shop_settings()['text_color']) ?>">
+    <title><?= h($title) ?> · <?= h(shop_name()) ?></title>
     <link rel="stylesheet" href="assets/css/app.css">
+    <style data-store-theme>:root {<?php foreach (Branding::cssVariables(shop_settings()) as $key => $value): ?><?= h($key) ?>:<?= h($value) ?>;<?php endforeach; ?>}</style>
 </head>
 <body>
 <div class="site-shell">
@@ -24,9 +25,8 @@ function render_header(string $title, string $page): void
     </div>
     <header class="site-header">
         <div class="nav-wrap">
-            <a class="brand" href="<?= h(url('home')) ?>" aria-label="Sports Galaxy home">
-                <span class="brand-mark"><span>G</span></span>
-                <span class="brand-text">SPORTS <b>GALAXY</b></span>
+            <a class="brand" href="<?= h(url('home')) ?>" aria-label="<?= h(shop_name()) ?> home">
+                <?= brand_markup() ?>
             </a>
             <button class="menu-toggle" type="button" aria-label="Toggle navigation" aria-expanded="false" data-menu-toggle>
                 <span></span><span></span><span></span>
@@ -34,21 +34,23 @@ function render_header(string $title, string $page): void
             <nav class="main-nav" data-main-nav>
                 <a class="<?= $page === 'home' ? 'active' : '' ?>" href="<?= h(url('home')) ?>">Home</a>
                 <a class="<?= $page === 'shop' ? 'active' : '' ?>" href="<?= h(url('shop')) ?>">Shop</a>
-                <a href="#why-galaxy">Why Galaxy</a>
-                <?php if ($user && $user['role'] === 'customer'): ?>
+                <a href="<?= h(url('home')) ?>#why-galaxy">Why Galaxy</a>
+                <?php if ($user && can_shop($user)): ?>
                     <a class="<?= $page === 'account' ? 'active' : '' ?>" href="<?= h(url('account')) ?>">My orders</a>
                 <?php endif; ?>
+                <?php if ($user && $user['role'] === 'delivery'): ?><a href="<?= h(url('delivery')) ?>">Delivery hub</a><?php endif; ?>
+                <?php if ($user): ?><a href="<?= h(url('profile')) ?>">Profile</a><?php endif; ?>
             </nav>
             <div class="nav-actions">
                 <a class="cart-link <?= $page === 'cart' ? 'active' : '' ?>" href="<?= h(url('cart')) ?>" aria-label="Shopping cart">
-                    <span class="cart-icon" aria-hidden="true">⌑</span>
+                    <span class="cart-icon"><?= cart_icon() ?></span>
                     <span class="cart-label">Cart</span>
                     <span class="cart-count"><?= cart_count() ?></span>
                 </a>
                 <?php if ($user): ?>
                     <?php $workspace = $user['role'] === 'admin' ? 'admin' : ($user['role'] === 'delivery' ? 'delivery' : 'account'); ?>
                     <a class="user-link" href="<?= h(url($workspace)) ?>">
-                        <span class="avatar"><?= h(mb_strtoupper(mb_substr($user['name'], 0, 1))) ?></span>
+                        <span class="avatar"><?= avatar_content($user) ?></span>
                         <span class="user-link-copy"><small><?= h(ucfirst($user['role'])) ?></small><?= h(explode(' ', $user['name'])[0]) ?></span>
                     </a>
                     <form class="inline-form logout-form" method="post">
@@ -87,8 +89,7 @@ function render_footer(): void
         <div class="footer-grid">
             <div class="footer-brand">
                 <a class="brand" href="<?= h(url('home')) ?>">
-                    <span class="brand-mark"><span>G</span></span>
-                    <span class="brand-text">SPORTS <b>GALAXY</b></span>
+                    <?= brand_markup() ?>
                 </a>
                 <p>Curated gear for the way you play. Built for every first serve, final sprint, and weekend win.</p>
                 <div class="social-row"><span>◎</span><span>◌</span><span>◈</span></div>
@@ -103,19 +104,16 @@ function render_footer(): void
                 <h3>Service</h3>
                 <a href="<?= h(url('cart')) ?>">Your cart</a>
                 <a href="<?= h(url('login')) ?>">Order tracking</a>
-                <a href="#why-galaxy">Delivery promise</a>
+                <a href="<?= h(url('home')) ?>#why-galaxy">Delivery promise</a>
             </div>
             <div class="newsletter">
-                <h3>Playbook drops</h3>
-                <p>New gear, fresh offers, no noise.</p>
-                <form action="<?= h(url('home')) ?>" method="get" onsubmit="return false;">
-                    <input type="email" aria-label="Email address" placeholder="you@example.com">
-                    <button aria-label="Subscribe" type="submit">→</button>
-                </form>
+                <h3>Your next game</h3>
+                <p>Keep your orders, receipts, and delivery updates together.</p>
+                <a href="<?= h(url('account')) ?>">Open your player profile →</a>
             </div>
         </div>
         <div class="footer-bottom">
-            <span>© <?= date('Y') ?> Sports Galaxy</span>
+            <span>© <?= date('Y') ?> <?= h(shop_name()) ?></span>
             <span>Made for the love of the game <b>✦</b></span>
             <span>Demo payment &amp; local data mode</span>
         </div>
@@ -144,7 +142,7 @@ function render_section_heading(string $eyebrow, string $title, string $copy = '
 function render_availability(array $product): void
 {
     if ($product['stock'] <= 0): ?>
-        <span class="availability unavailable">Restocking <?= h(format_date($product['restock_date'], 'd M')) ?></span>
+        <span class="availability unavailable">Restocking <?= h($product['restock_date'] ? format_date($product['restock_date'], 'd M') : 'soon') ?></span>
     <?php elseif ($product['stock'] < $product['min_stock']): ?>
         <span class="availability low">Only <?= (int) $product['stock'] ?> left</span>
     <?php else: ?>
@@ -157,10 +155,10 @@ function render_product_card(array $product, bool $compact = false): void
     $category = category_name((int) $product['category_id']);
     $stockClass = $product['stock'] <= 0 ? 'is-sold-out' : ($product['stock'] < $product['min_stock'] ? 'is-low-stock' : '');
     ?>
-    <article class="product-card <?= $compact ? 'product-card-compact' : '' ?> <?= $stockClass ?>" data-product-card data-name="<?= h(mb_strtolower($product['name'] . ' ' . $product['brand'] . ' ' . $category)) ?>" data-category="<?= (int) $product['category_id'] ?>">
+    <article class="product-card <?= $compact ? 'product-card-compact' : '' ?> <?= $stockClass ?>" data-product-card data-name="<?= h(mb_strtolower($product['name'] . ' ' . $product['brand'] . ' ' . $category . ' ' . $product['description'] . ' ' . $product['sku'])) ?>" data-category="<?= (int) $product['category_id'] ?>">
         <div class="product-art art-<?= (int) $product['category_id'] ?>">
             <div class="art-orbit orbit-one"></div><div class="art-orbit orbit-two"></div>
-            <span class="product-emoji" aria-hidden="true"><?= h($product['visual']) ?></span>
+            <span class="product-emoji <?= !empty($product['image_path']) ? 'has-photo' : '' ?>"><?= product_visual($product) ?></span>
             <?php if ($product['featured']): ?><span class="featured-tag">GALAXY PICK</span><?php endif; ?>
             <?php if ($product['stock'] <= 0): ?><span class="soldout-tag">RESTOCKING</span><?php endif; ?>
             <span class="art-sku"><?= h($product['sku']) ?></span>
@@ -253,7 +251,7 @@ function render_home(): void
         <div class="story-content">
             <p class="eyebrow">THE GALAXY STANDARD</p>
             <h2>Less time hunting for kit.<br><em>More time playing.</em></h2>
-            <p>We made Sports Galaxy feel like your trusted local sports shop—just faster, clearer, and open whenever your next match calls.</p>
+            <p>We made <?= h(shop_name()) ?> feel like your trusted local sports shop—just faster, clearer, and open whenever your next match calls.</p>
             <a class="text-link text-link-light" href="<?= h(url('shop')) ?>">Meet your next essential <span>→</span></a>
         </div>
         <div class="story-stats">
@@ -276,7 +274,7 @@ function render_shop(): void
 {
     $search = trim((string) ($_GET['q'] ?? ''));
     $categoryId = (int) ($_GET['category'] ?? 0);
-    $products = store()->products($search, $categoryId ?: null);
+    $products = store()->products(null, $categoryId ?: null);
     $categories = store()->categories();
     ?>
     <section class="shop-hero">
@@ -291,7 +289,7 @@ function render_shop(): void
         <form class="search-field" method="get" data-search-form>
             <input type="hidden" name="page" value="shop">
             <?php if ($categoryId): ?><input type="hidden" name="category" value="<?= $categoryId ?>"><?php endif; ?>
-            <span>⌕</span><input type="search" name="q" value="<?= h($search) ?>" placeholder="Search footballs, bats, fitness..." autocomplete="off" data-product-search>
+            <span>⌕</span><input type="search" name="q" value="<?= h($search) ?>" placeholder="Search footballs, bats, fitness..." aria-label="Search equipment" autocomplete="off" data-product-search>
             <button type="submit">Search</button>
         </form>
         <div class="filter-row" data-category-filters>
@@ -302,7 +300,7 @@ function render_shop(): void
         </div>
     </section>
     <section class="content-section shop-results">
-        <div class="results-meta"><span><strong data-result-count><?= count($products) ?></strong> pieces of equipment</span><span>Updated stock <i class="live-dot"></i></span></div>
+        <div class="results-meta" aria-live="polite"><span><strong data-result-count><?= count($products) ?></strong> pieces of equipment</span><span>Updated stock <i class="live-dot"></i></span></div>
         <div class="product-grid" data-product-grid>
             <?php foreach ($products as $product): render_product_card($product); endforeach; ?>
         </div>
@@ -317,8 +315,9 @@ function render_cart_page(): void
 {
     $cart = store()->cartDetails(cart());
     $user = current_user();
-    $estimatedTax = round($cart['subtotal'] * 0.05, 2);
-    $shipping = $cart['subtotal'] >= 999 ? 0 : 79;
+    $quote = store()->quote(cart());
+    $estimatedTax = $quote['tax'];
+    $shipping = $quote['shipping'];
     ?>
     <section class="page-intro compact-intro">
         <p class="eyebrow">YOUR EQUIPMENT LOCKER</p>
@@ -336,7 +335,7 @@ function render_cart_page(): void
                     <div class="cart-list">
                         <?php foreach ($cart['items'] as $item): $product = $item['product']; ?>
                             <article class="cart-item">
-                                <div class="cart-product-art art-<?= (int) $product['category_id'] ?>"><?= h($product['visual']) ?></div>
+                                <div class="cart-product-art art-<?= (int) $product['category_id'] ?>"><?= product_visual($product) ?></div>
                                 <div class="cart-product-copy">
                                     <span><?= h(category_name((int) $product['category_id'])) ?> · <?= h($product['brand']) ?></span>
                                     <h3><?= h($product['name']) ?></h3>
@@ -344,7 +343,7 @@ function render_cart_page(): void
                                 </div>
                                 <div class="quantity-control">
                                     <button type="button" data-quantity-down aria-label="Decrease quantity">−</button>
-                                    <input type="number" min="1" max="<?= max(1, (int) $product['stock']) ?>" name="quantity[<?= (int) $product['id'] ?>]" value="<?= (int) $item['quantity'] ?>" data-quantity-input>
+                                    <input type="number" aria-label="Quantity for <?= h($product['name']) ?>" min="1" max="<?= max(1, (int) $product['stock']) ?>" name="quantity[<?= (int) $product['id'] ?>]" value="<?= (int) $item['quantity'] ?>" data-quantity-input>
                                     <button type="button" data-quantity-up aria-label="Increase quantity">+</button>
                                 </div>
                                 <strong class="cart-line-price"><?= money((float) $item['line_total']) ?></strong>
@@ -362,19 +361,19 @@ function render_cart_page(): void
                 <div class="summary-row"><span>Delivery</span><strong><?= $shipping === 0 ? 'Free' : money($shipping) ?></strong></div>
                 <div class="summary-row muted"><span>Estimated GST</span><strong><?= money($estimatedTax) ?></strong></div>
                 <div class="summary-total"><span>Estimated total</span><strong><?= money($cart['subtotal'] + $shipping + $estimatedTax) ?></strong></div>
-                <?php if ($user && $user['role'] === 'customer'): ?>
+                <?php if ($user && can_shop($user)): ?>
                     <a class="button button-primary button-full" href="<?= h(url('checkout')) ?>">Secure checkout <span>→</span></a>
                 <?php elseif (!$user): ?>
                     <a class="button button-primary button-full" href="<?= h(url('login', ['next' => 'checkout'])) ?>">Sign in to check out <span>→</span></a>
                     <p class="summary-note">Browsing is open to everyone. A customer account keeps orders and invoices secure.</p>
                 <?php else: ?>
-                    <p class="summary-note">Please use a customer account to place an order. Admin and delivery accounts are protected workspaces.</p>
+                    <p class="summary-note">Please use a customer or delivery partner account to place an order.</p>
                 <?php endif; ?>
                 <div class="summary-assurance"><span>◈</span><p><strong>Safe and simple</strong><br>Choose COD, UPI, or card at checkout.</p></div>
             </aside>
         <?php else: ?>
             <div class="empty-state cart-empty">
-                <div class="empty-orb">⌑</div><p class="eyebrow">YOUR LOCKER IS OPEN</p><h2>Nothing in your cart yet.</h2><p>Find the gear that makes you want to get back out there.</p><a class="button button-primary" href="<?= h(url('shop')) ?>">Explore equipment <span>→</span></a>
+                <div class="empty-orb cart-empty-icon"><?= cart_icon() ?></div><p class="eyebrow">YOUR LOCKER IS OPEN</p><h2>Nothing in your cart yet.</h2><p>Find the gear that makes you want to get back out there.</p><a class="button button-primary" href="<?= h(url('shop')) ?>">Explore equipment <span>→</span></a>
             </div>
         <?php endif; ?>
     </section>
@@ -384,6 +383,7 @@ function render_cart_page(): void
 function render_checkout_page(array $user): void
 {
     $cart = store()->cartDetails(cart());
+    $quote = store()->quote(cart());
     if ($cart['items'] === []) {
         flash('warning', 'Add something to your cart before checking out.');
         redirect('cart');
@@ -418,20 +418,21 @@ function render_checkout_page(array $user): void
             </section>
             <section class="checkout-block coupon-block">
                 <div class="form-block-heading"><span class="form-step">03</span><div><h2>Have a playmaker code?</h2><p>Try <strong>GALAXY10</strong> for 10% off this order.</p></div></div>
-                <label class="coupon-input"><input name="coupon" placeholder="Offer code"><span>10% OFF</span></label>
+                <label class="coupon-input"><input name="coupon" placeholder="Offer code" data-coupon><span class="sr-only" data-coupon-message aria-live="polite"></span><span>10% OFF</span></label>
             </section>
             <button class="button button-primary button-large checkout-submit" type="submit">Place secure order <span>→</span></button>
         </form>
-        <aside class="checkout-summary">
+        <aside class="checkout-summary" data-checkout-summary data-subtotal="<?= h($quote['subtotal']) ?>" data-tax-rate="<?= h($quote['tax_rate']) ?>" data-shipping-fee="<?= h($quote['shipping_fee']) ?>" data-free-shipping="<?= h($quote['free_shipping_at']) ?>">
             <p class="summary-label">YOUR ORDER</p>
             <?php foreach ($cart['items'] as $item): ?>
-                <div class="checkout-line"><span class="mini-product-art art-<?= (int) $item['product']['category_id'] ?>"><?= h($item['product']['visual']) ?><b><?= (int) $item['quantity'] ?></b></span><span><strong><?= h($item['product']['name']) ?></strong><small><?= h($item['product']['brand']) ?></small></span><em><?= money((float) $item['line_total']) ?></em></div>
+                <div class="checkout-line"><span class="mini-product-art art-<?= (int) $item['product']['category_id'] ?>"><?= product_visual($item['product']) ?><b><?= (int) $item['quantity'] ?></b></span><span><strong><?= h($item['product']['name']) ?></strong><small><?= h($item['product']['brand']) ?></small></span><em><?= money((float) $item['line_total']) ?></em></div>
             <?php endforeach; ?>
             <div class="summary-divider"></div>
             <div class="summary-row"><span>Subtotal</span><strong><?= money((float) $cart['subtotal']) ?></strong></div>
-            <div class="summary-row"><span>Delivery</span><strong><?= $cart['subtotal'] >= 999 ? 'Free' : '₹79.00' ?></strong></div>
-            <div class="summary-row"><span>GST (estimated)</span><strong><?= money(round($cart['subtotal'] * 0.05, 2)) ?></strong></div>
-            <div class="summary-total"><span>Total before offer</span><strong><?= money($cart['subtotal'] + ($cart['subtotal'] >= 999 ? 0 : 79) + round($cart['subtotal'] * 0.05, 2)) ?></strong></div>
+            <div class="summary-row"><span>Delivery</span><strong><span data-summary-shipping><?= $quote['shipping'] === 0.0 ? 'Free' : money($quote['shipping']) ?></span></strong></div>
+            <div class="summary-row"><span>GST (estimated)</span><strong><span data-summary-tax><?= money($quote['tax']) ?></span></strong></div>
+            <div class="summary-row" data-discount-row hidden><span>GALAXY10 discount</span><strong data-summary-discount></strong></div>
+            <div class="summary-total"><span>Total</span><strong data-summary-total><?= money($quote['grand_total']) ?></strong></div>
             <div class="order-trust"><span>◈</span><p><strong>Inventory protected</strong><br>We verify every item before confirmation.</p></div>
         </aside>
     </section>
@@ -440,7 +441,7 @@ function render_checkout_page(array $user): void
 
 function render_login_page(): void
 {
-    $next = preg_replace('/[^a-z_]/', '', (string) ($_GET['next'] ?? 'account')) ?: 'account';
+    $next = preg_replace('/[^a-z_]/', '', (string) ($_GET['next'] ?? ''));
     ?>
     <section class="auth-shell">
         <div class="auth-visual">
@@ -460,13 +461,13 @@ function render_login_page(): void
                 <p class="auth-subcopy">Use your account to keep every delivery and receipt in one place.</p>
                 <form class="auth-form" method="post">
                     <?= csrf_field() ?>
-                    <input type="hidden" name="action" value="login">
+                    <input type="hidden" name="action" value="login"><input type="hidden" name="return_page" value="login">
                     <input type="hidden" name="next" value="<?= h($next) ?>">
                     <label>Email address<input type="email" name="email" required autocomplete="email" placeholder="you@example.com"></label>
                     <label>Password<input type="password" name="password" required autocomplete="current-password" placeholder="••••••••"></label>
                     <button class="button button-primary button-full" type="submit">Sign in <span>→</span></button>
                 </form>
-                <p class="auth-switch">New to Sports Galaxy? <a href="<?= h(url('register')) ?>">Create an account</a></p>
+                <p class="auth-switch">New to <?= h(shop_name()) ?>? <a href="<?= h(url('register')) ?>">Create an account</a></p>
                 <div class="demo-accounts">
                     <p><span>◌</span> Demo access</p>
                     <div><button type="button" data-demo-login data-email="customer@sportsgalaxy.local" data-password="Customer@123">Customer</button><button type="button" data-demo-login data-email="admin@sportsgalaxy.local" data-password="Admin@123">Admin</button><button type="button" data-demo-login data-email="delivery@sportsgalaxy.local" data-password="Delivery@123">Delivery</button></div>
@@ -498,7 +499,7 @@ function render_register_page(): void
                 <p class="auth-subcopy">A few details, then you’re ready to build your equipment locker.</p>
                 <form class="auth-form" method="post">
                     <?= csrf_field() ?>
-                    <input type="hidden" name="action" value="register">
+                    <input type="hidden" name="action" value="register"><input type="hidden" name="return_page" value="register">
                     <div class="form-grid two">
                         <label>Full name<input type="text" name="name" required autocomplete="name" placeholder="Your name"></label>
                         <label>Phone number<input type="tel" name="phone" required autocomplete="tel" placeholder="+91 98765 43210"></label>
@@ -521,7 +522,7 @@ function render_account_page(array $user): void
     $activeOrders = array_filter($orders, static fn(array $order): bool => !in_array($order['status'], ['delivered', 'cancelled'], true));
     ?>
     <section class="account-hero">
-        <div class="account-welcome"><span class="avatar avatar-large"><?= h(mb_strtoupper(mb_substr($user['name'], 0, 1))) ?></span><div><p class="eyebrow">YOUR PLAYER PROFILE</p><h1>Hey, <?= h(explode(' ', $user['name'])[0]) ?>.</h1><p>Everything you need for your next game, in one clear view.</p></div></div>
+        <div class="account-welcome"><span class="avatar avatar-large"><?= avatar_content($user) ?></span><div><p class="eyebrow">YOUR PLAYER PROFILE</p><h1>Hey, <?= h(explode(' ', $user['name'])[0]) ?>.</h1><p>Everything you need for your next game, in one clear view.</p></div></div>
         <div class="account-hero-stats"><div><strong><?= count($orders) ?></strong><span>total orders</span></div><div><strong><?= count($activeOrders) ?></strong><span>in motion</span></div><div><strong><?= count($notifications) ?></strong><span>updates</span></div></div>
     </section>
     <section class="account-layout content-section">
@@ -539,7 +540,7 @@ function render_account_page(array $user): void
                         <?php foreach ($orders as $order): ?>
                             <article class="customer-order-card">
                                 <div class="order-card-top"><div><span class="order-number"><?= h($order['number']) ?></span><small>Placed <?= h(format_date($order['created_at'], 'd M Y')) ?></small></div><span class="status-pill <?= h(status_tone($order['status'])) ?>"><?= h(status_label($order['status'])) ?></span></div>
-                                <div class="order-product-previews"><?php foreach (array_slice($order['lines'], 0, 4) as $line): ?><span><?= h($line['visual']) ?></span><?php endforeach; ?><p><?= count($order['lines']) ?> item<?= count($order['lines']) === 1 ? '' : 's' ?> · <?= money((float) $order['grand_total']) ?></p></div>
+                                <div class="order-product-previews"><?php foreach (array_slice($order['lines'], 0, 4) as $line): ?><span><?= product_visual($line) ?></span><?php endforeach; ?><p><?= count($order['lines']) ?> item<?= count($order['lines']) === 1 ? '' : 's' ?> · <?= money((float) $order['grand_total']) ?></p></div>
                                 <div class="order-card-footer"><span class="tracking-copy">Tracking <b><?= h($order['tracking_code']) ?></b></span><div><a class="text-button" href="<?= h(url('invoice', ['id' => $order['id']])) ?>">View invoice</a><a class="button button-small button-dark" href="<?= h(url('invoice', ['id' => $order['id'], 'track' => 1])) ?>">Track order <span>→</span></a></div></div>
                             </article>
                         <?php endforeach; ?>
@@ -558,7 +559,7 @@ function render_account_page(array $user): void
             </section>
             <section id="profile" class="account-section-break">
                 <?php render_section_heading('PLAYER DETAILS', 'The practical bits.', 'These details pre-fill your next checkout.'); ?>
-                <div class="profile-card"><span class="avatar avatar-large"><?= h(mb_strtoupper(mb_substr($user['name'], 0, 1))) ?></span><div><strong><?= h($user['name']) ?></strong><p><?= h($user['email']) ?><br><?= h($user['phone']) ?></p></div><span class="profile-safe">◈ Account secured</span></div>
+                <a class="text-link" href="<?= h(url('profile')) ?>">Change profile photo →</a><div class="profile-card"><span class="avatar avatar-large"><?= avatar_content($user) ?></span><div><strong><?= h($user['name']) ?></strong><p><?= h($user['email']) ?><br><?= h($user['phone']) ?></p></div><span class="profile-safe">◈ Account secured</span></div>
             </section>
         </div>
     </section>
@@ -570,27 +571,30 @@ function render_invoice_page(array $order, bool $track = false): void
     ?>
     <section class="invoice-page <?= $track ? 'tracking-mode' : '' ?>">
         <div class="invoice-actions content-section">
-            <a class="back-link" href="<?= h(current_user()['role'] === 'customer' ? url('account') : url(current_user()['role'] === 'admin' ? 'admin' : 'delivery')) ?>">← Back to workspace</a>
+            <a class="back-link" href="<?= h((int) $order['user_id'] === (int) current_user()['id'] ? url('account') : url(current_user()['role'] === 'admin' ? 'admin' : 'delivery')) ?>">← Back to workspace</a>
             <div><button class="button button-ghost print-button" type="button" onclick="window.print()">Print receipt <span>↗</span></button><?php if (!$track): ?><a class="button button-primary" href="<?= h(url('invoice', ['id' => $order['id'], 'track' => 1])) ?>">Track order <span>→</span></a><?php endif; ?></div>
         </div>
         <div class="invoice-layout content-section">
             <article class="invoice-card">
-                <div class="invoice-brand"><a class="brand" href="<?= h(url('home')) ?>"><span class="brand-mark"><span>G</span></span><span class="brand-text">SPORTS <b>GALAXY</b></span></a><div><span>ORDER RECEIPT</span><strong><?= h($order['number']) ?></strong></div></div>
+                <div class="invoice-brand"><a class="brand" href="<?= h(url('home')) ?>"><?= brand_markup() ?></a><div><span>ORDER RECEIPT</span><strong><?= h($order['number']) ?></strong></div></div>
                 <div class="invoice-meta"><div><span>Issued to</span><strong><?= h($order['address']['recipient']) ?></strong><p><?= h($order['address']['line1']) ?><br><?= h($order['address']['city']) ?> · <?= h($order['address']['postal_code']) ?><br><?= h($order['address']['phone']) ?></p></div><div><span>Order details</span><strong><?= h(format_date($order['created_at'], 'd M Y')) ?></strong><p>Tracking: <?= h($order['tracking_code']) ?><br>Payment: <?= h(strtoupper($order['payment_method'])) ?><br><b class="invoice-payment <?= h(status_tone($order['payment_status'])) ?>"><?= h(status_label($order['payment_status'])) ?></b></p></div></div>
-                <div class="invoice-lines"><div class="invoice-line-head"><span>ITEM</span><span>QTY</span><span>TOTAL</span></div><?php foreach ($order['lines'] as $line): ?><div class="invoice-line"><span><b class="invoice-item-visual"><?= h($line['visual']) ?></b><span><strong><?= h($line['name']) ?></strong><small><?= h($line['sku']) ?> · <?= money((float) $line['unit_price']) ?></small></span></span><span>×<?= (int) $line['quantity'] ?></span><strong><?= money((float) $line['line_total']) ?></strong></div><?php endforeach; ?></div>
+                <div class="invoice-lines"><div class="invoice-line-head"><span>ITEM</span><span>QTY</span><span>TOTAL</span></div><?php foreach ($order['lines'] as $line): ?><div class="invoice-line"><span><b class="invoice-item-visual"><?= product_visual($line) ?></b><span><strong><?= h($line['name']) ?></strong><small><?= h($line['sku']) ?> · <?= money((float) $line['unit_price']) ?></small></span></span><span>×<?= (int) $line['quantity'] ?></span><strong><?= money((float) $line['line_total']) ?></strong></div><?php endforeach; ?></div>
                 <div class="invoice-totals"><div><span>Subtotal</span><strong><?= money((float) $order['subtotal']) ?></strong></div><?php if ($order['discount'] > 0): ?><div class="invoice-discount"><span><?= h($order['discount_name']) ?></span><strong>−<?= money((float) $order['discount']) ?></strong></div><?php endif; ?><div><span>GST (<?= h((string) $order['tax_rate']) ?>%)</span><strong><?= money((float) $order['tax']) ?></strong></div><div><span>Delivery</span><strong><?= (float) $order['shipping'] === 0.0 ? 'Free' : money((float) $order['shipping']) ?></strong></div><div class="invoice-grand"><span>Grand total</span><strong><?= money((float) $order['grand_total']) ?></strong></div></div>
                 <div class="invoice-footer"><span>Thank you for playing with us. ✦</span><span>Tax invoice · Demo project record</span></div>
             </article>
             <aside class="tracking-panel">
                 <p class="eyebrow"><?= $track ? 'LIVE DELIVERY VIEW' : 'ORDER STATUS' ?></p>
                 <div class="tracking-head"><div><h2><?= h(status_label($order['status'])) ?></h2><p><?= h($order['status'] === 'delivered' ? 'This order is complete. Enjoy every minute of it.' : 'Tracking code: ' . $order['tracking_code']) ?></p></div><span class="tracking-status-icon"><?= $order['status'] === 'delivered' ? '✓' : '↗' ?></span></div>
+                <?php if ((int) $order['user_id'] === (int) current_user()['id'] && !in_array($order['status'], ['delivered', 'cancelled'], true)): ?>
+                    <div class="handover-code"><small>DELIVERY VERIFICATION CODE</small><strong><?= h($order['delivery_code']) ?></strong><p>Share this code with your partner when you receive your order.</p></div>
+                <?php endif; ?>
                 <ol class="timeline">
                     <?php foreach ($order['delivery_events'] as $index => $event): ?>
                         <li class="<?= $index === array_key_last($order['delivery_events']) ? 'current' : '' ?>"><i></i><div><strong><?= h(status_label($event['status'])) ?></strong><p><?= h($event['note']) ?></p><small><?= h(format_date($event['at'])) ?> · <?= h($event['actor']) ?></small></div></li>
                     <?php endforeach; ?>
                 </ol>
                 <?php if ($order['delivery_partner_id']): $partner = store()->user((int) $order['delivery_partner_id']); ?>
-                    <div class="partner-card"><span class="partner-avatar"><?= h(mb_strtoupper(mb_substr($partner['name'], 0, 1))) ?></span><div><small>YOUR DELIVERY PARTNER</small><strong><?= h($partner['name']) ?></strong><p>Order and address details are protected in this workspace.</p></div></div>
+                    <div class="partner-card"><span class="partner-avatar"><?= avatar_content($partner) ?></span><div><small>YOUR DELIVERY PARTNER</small><strong><?= h($partner['name']) ?></strong><p>Order and address details are protected in this workspace.</p></div></div>
                 <?php endif; ?>
             </aside>
         </div>
@@ -601,7 +605,7 @@ function render_invoice_page(array $order, bool $track = false): void
 function render_admin_page(array $user): void
 {
     $tab = $_GET['tab'] ?? 'dashboard';
-    $allowedTabs = ['dashboard', 'products', 'inventory', 'orders', 'finance'];
+    $allowedTabs = ['dashboard', 'products', 'inventory', 'orders', 'finance', 'partners', 'settings'];
     $tab = in_array($tab, $allowedTabs, true) ? $tab : 'dashboard';
     $stats = store()->dashboardStats();
     $orders = store()->allOrders();
@@ -610,18 +614,20 @@ function render_admin_page(array $user): void
     $editingProduct = isset($_GET['edit']) ? store()->product((int) $_GET['edit']) : null;
     ?>
     <section class="workspace-header admin-workspace-header">
-        <div><div class="workspace-kicker"><span>CONTROL ROOM</span><i></i><small>ADMIN ACCESS</small></div><h1>Good morning, <?= h(explode(' ', $user['name'])[0]) ?>.</h1><p>Your shop is moving. Here’s the signal from Sports Galaxy today.</p></div>
+        <div><div class="workspace-kicker"><span>CONTROL ROOM</span><i></i><small>ADMIN ACCESS</small></div><h1>Good morning, <?= h(explode(' ', $user['name'])[0]) ?>.</h1><p>Your shop is moving. Here’s the signal from <?= h(shop_name()) ?> today.</p></div>
         <div class="workspace-header-actions"><span class="live-indicator"><i></i> Live store data</span><a class="button button-dark" href="<?= h(url('shop')) ?>">View storefront ↗</a></div>
     </section>
     <section class="workspace-shell">
         <aside class="workspace-nav">
-            <div class="workspace-user"><span class="avatar avatar-large"><?= h(mb_strtoupper(mb_substr($user['name'], 0, 1))) ?></span><div><strong><?= h($user['name']) ?></strong><small>Store administrator</small></div></div>
+            <div class="workspace-user"><span class="avatar avatar-large"><?= avatar_content($user) ?></span><div><strong><?= h($user['name']) ?></strong><small>Store administrator</small></div></div>
             <nav>
                 <a class="<?= $tab === 'dashboard' ? 'active' : '' ?>" href="<?= h(url('admin', ['tab' => 'dashboard'])) ?>"><span>▦</span> Overview</a>
                 <a class="<?= $tab === 'products' ? 'active' : '' ?>" href="<?= h(url('admin', ['tab' => 'products'])) ?>"><span>◈</span> Products</a>
                 <a class="<?= $tab === 'inventory' ? 'active' : '' ?>" href="<?= h(url('admin', ['tab' => 'inventory'])) ?>"><span>⌑</span> Inventory <?php if ($stats['low_stock']): ?><b><?= count($stats['low_stock']) ?></b><?php endif; ?></a>
                 <a class="<?= $tab === 'orders' ? 'active' : '' ?>" href="<?= h(url('admin', ['tab' => 'orders'])) ?>"><span>↗</span> Orders</a>
+                <a class="<?= $tab === 'partners' ? 'active' : '' ?>" href="<?= h(url('admin', ['tab' => 'partners'])) ?>"><span>♙</span> Delivery team</a>
                 <a class="<?= $tab === 'finance' ? 'active' : '' ?>" href="<?= h(url('admin', ['tab' => 'finance'])) ?>"><span>◒</span> Finance</a>
+                <a class="<?= $tab === 'settings' ? 'active' : '' ?>" href="<?= h(url('admin', ['tab' => 'settings'])) ?>"><span>⚙</span> Store settings</a>
             </nav>
             <div class="workspace-nav-help"><span>✦</span><p><strong>Daily summary ready</strong><br><?= count($stats['low_stock']) ?> item<?= count($stats['low_stock']) === 1 ? '' : 's' ?> need inventory attention.</p></div>
             <a class="workspace-store-link" href="<?= h(url('home')) ?>">← Back to storefront</a>
@@ -630,23 +636,23 @@ function render_admin_page(array $user): void
             <?php if ($tab === 'dashboard'): ?>
                 <div class="workspace-content-head"><div><p class="eyebrow">TODAY'S PULSE</p><h2>The dashboard at a glance.</h2></div><span class="date-chip"><?= date('D, d M Y') ?></span></div>
                 <div class="metric-grid">
-                    <article class="metric-card accent-lime"><span class="metric-icon">₹</span><div><small>Today’s revenue</small><strong><?= money((float) $stats['daily_revenue']) ?></strong><em>+12.4% vs last week</em></div></article>
+                    <article class="metric-card accent-lime"><span class="metric-icon">₹</span><div><small>Today’s revenue</small><strong><?= money((float) $stats['daily_revenue']) ?></strong><em>Orders placed today, excluding cancellations</em></div></article>
                     <article class="metric-card accent-violet"><span class="metric-icon">⌑</span><div><small>Today’s transactions</small><strong><?= (int) $stats['daily_orders'] ?></strong><em><?= count($orders) ?> orders in demo history</em></div></article>
                     <article class="metric-card accent-cyan"><span class="metric-icon">◒</span><div><small>Monthly net profit</small><strong><?= money((float) $stats['month_profit']) ?></strong><em>After product cost &amp; expenses</em></div></article>
                     <article class="metric-card accent-orange"><span class="metric-icon">!</span><div><small>Low-stock alerts</small><strong><?= count($stats['low_stock']) ?></strong><em>Below individual threshold</em></div></article>
                 </div>
                 <div class="admin-main-grid">
-                    <section class="admin-card revenue-card"><div class="admin-card-head"><div><p class="eyebrow">REVENUE SIGNAL</p><h3>Sales, seven day orbit.</h3></div><button class="chart-period">This week⌄</button></div><div class="bar-chart" aria-label="Weekly sales bar chart"><?php $bars = [28, 43, 34, 64, 48, 79, 55]; foreach ($bars as $i => $height): ?><div class="<?= $i === 5 ? 'highlight' : '' ?>"><i style="height: <?= $height ?>%"></i><span><?= ['M','T','W','T','F','S','S'][$i] ?></span></div><?php endforeach; ?></div><div class="chart-legend"><span><i class="legend-lime"></i> Revenue</span><strong><?= money((float) $stats['month_revenue']) ?> this month</strong></div></section>
+                    <section class="admin-card revenue-card"><div class="admin-card-head"><div><p class="eyebrow">REVENUE SIGNAL</p><h3>Sales, seven day orbit.</h3></div><span class="chart-period">Last 7 days</span></div><div class="bar-chart" aria-label="Weekly sales bar chart"><?php $peak = max(1, max(array_column($stats['weekly_revenue'], 'total'))); foreach ($stats['weekly_revenue'] as $day): ?><div title="<?= h($day['date'] . ': ' . money($day['total'])) ?>"><i style="height: <?= round($day['total'] / $peak * 100, 2) ?>%"></i><span><?= h($day['label']) ?></span></div><?php endforeach; ?></div><div class="chart-legend"><span><i class="legend-lime"></i> Revenue</span><strong><?= money((float) $stats['month_revenue']) ?> this month</strong></div></section>
                     <section class="admin-card top-products-card"><div class="admin-card-head"><div><p class="eyebrow">POPULAR NOW</p><h3>Top-selling equipment.</h3></div><a href="<?= h(url('admin', ['tab' => 'products'])) ?>">Manage →</a></div><ol class="rank-list"><?php $rank = 1; foreach ($stats['top_products'] ?: ['No sales yet' => 0] as $name => $quantity): ?><li><b><?= $rank++ ?></b><span><?= h($name) ?></span><strong><?= (int) $quantity ?> sold</strong></li><?php endforeach; ?></ol></section>
                 </div>
                 <div class="admin-main-grid lower-grid">
-                    <section class="admin-card alert-card"><div class="admin-card-head"><div><p class="eyebrow">INVENTORY WATCH</p><h3>Items asking for a refill.</h3></div><a href="<?= h(url('admin', ['tab' => 'inventory'])) ?>">Open inventory →</a></div><?php if ($stats['low_stock']): ?><div class="low-stock-list"><?php foreach (array_slice($stats['low_stock'], 0, 4) as $product): ?><div><span class="mini-product-art art-<?= (int) $product['category_id'] ?>"><?= h($product['visual']) ?></span><span><strong><?= h($product['name']) ?></strong><small><?= (int) $product['stock'] ?> / <?= (int) $product['min_stock'] ?> units · <?= $product['stock'] === 0 ? 'restocking ' . format_date($product['restock_date'], 'd M') : 'threshold breached' ?></small></span><a href="<?= h(url('admin', ['tab' => 'inventory'])) ?>">Adjust</a></div><?php endforeach; ?></div><?php else: ?><p class="quiet-copy">All products are currently above their minimum stock level.</p><?php endif; ?></section>
+                    <section class="admin-card alert-card"><div class="admin-card-head"><div><p class="eyebrow">INVENTORY WATCH</p><h3>Items asking for a refill.</h3></div><a href="<?= h(url('admin', ['tab' => 'inventory'])) ?>">Open inventory →</a></div><?php if ($stats['low_stock']): ?><div class="low-stock-list"><?php foreach (array_slice($stats['low_stock'], 0, 4) as $product): ?><div><span class="mini-product-art art-<?= (int) $product['category_id'] ?>"><?= product_visual($product) ?></span><span><strong><?= h($product['name']) ?></strong><small><?= (int) $product['stock'] ?> / <?= (int) $product['min_stock'] ?> units · <?= $product['stock'] === 0 ? 'restocking ' . ($product['restock_date'] ? format_date($product['restock_date'], 'd M') : 'soon') : 'threshold breached' ?></small></span><a href="<?= h(url('admin', ['tab' => 'inventory'])) ?>">Adjust</a></div><?php endforeach; ?></div><?php else: ?><p class="quiet-copy">All products are currently above their minimum stock level.</p><?php endif; ?></section>
                     <section class="admin-card recent-orders-card"><div class="admin-card-head"><div><p class="eyebrow">LATEST ACTIVITY</p><h3>Recent orders.</h3></div><a href="<?= h(url('admin', ['tab' => 'orders'])) ?>">View all →</a></div><div class="mini-order-list"><?php foreach (array_slice($orders, 0, 4) as $order): ?><div><span class="order-mini-avatar"><?= h(mb_strtoupper(mb_substr($order['customer_name'], 0, 1))) ?></span><span><strong><?= h($order['customer_name']) ?></strong><small><?= h($order['number']) ?></small></span><em><?= money((float) $order['grand_total']) ?></em><i class="status-dot <?= h(status_tone($order['status'])) ?>"></i></div><?php endforeach; ?></div></section>
                 </div>
             <?php elseif ($tab === 'products'): ?>
                 <div class="workspace-content-head"><div><p class="eyebrow">PRODUCT CATALOG</p><h2><?= $editingProduct ? 'Fine-tune an item.' : 'Add to the equipment room.' ?></h2></div><a class="button button-ghost" href="<?= h(url('admin', ['tab' => 'products'])) ?>">+ New product</a></div>
                 <section class="admin-editor-card">
-                    <form method="post" class="product-editor-form">
+                    <form method="post" enctype="multipart/form-data" class="product-editor-form">
                         <?= csrf_field() ?>
                         <input type="hidden" name="action" value="save_product"><input type="hidden" name="return_page" value="admin"><input type="hidden" name="return_tab" value="products"><input type="hidden" name="id" value="<?= (int) ($editingProduct['id'] ?? 0) ?>">
                         <div class="form-grid product-form-grid">
@@ -659,24 +665,39 @@ function render_admin_page(array $user): void
                             <label>Current stock<input required type="number" min="0" name="stock" value="<?= h($editingProduct['stock'] ?? '0') ?>"></label>
                             <label>Low-stock threshold<input required type="number" min="1" name="min_stock" value="<?= h($editingProduct['min_stock'] ?? '5') ?>"></label>
                             <label>Expected restock<input type="date" name="restock_date" value="<?= h($editingProduct['restock_date'] ?? '') ?>"></label>
-                            <label>Product icon<select name="visual"><?php foreach (['⚽','🏏','🏀','🏸','🎾','🏃','🧘','🏋️','🥊','🚴'] as $visual): ?><option value="<?= h($visual) ?>" <?= ($editingProduct['visual'] ?? '⚽') === $visual ? 'selected' : '' ?>><?= h($visual) ?> Gear</option><?php endforeach; ?></select></label>
+                            <label>Product icon<select name="visual"><?php foreach (['⚽','🏏','🏀','🏸','🎾','🏃','🧘','🏋️','🥊','🚴','🥅'] as $visual): ?><option value="<?= h($visual) ?>" <?= ($editingProduct['visual'] ?? '⚽') === $visual ? 'selected' : '' ?>><?= h($visual) ?> Gear</option><?php endforeach; ?></select></label>
                             <label class="wide">Description<textarea required name="description" rows="2" placeholder="A short helpful product description"><?= h($editingProduct['description'] ?? '') ?></textarea></label>
+                        </div>
+                        <div class="product-photo-editor">
+                            <div class="photo-current mini-product-art"><?= $editingProduct ? product_visual($editingProduct) : '⚽' ?></div>
+                            <?php render_photo_input('product_photo', 'Product photo', !empty($editingProduct['image_path'])); ?>
                         </div>
                         <label class="checkbox-label"><input type="checkbox" name="featured" <?= !empty($editingProduct['featured']) ? 'checked' : '' ?>> <span>Feature this product on the storefront</span></label>
                         <button class="button button-primary" type="submit"><?= $editingProduct ? 'Save changes' : 'Add product' ?> <span>→</span></button>
                     </form>
                 </section>
-                <section class="admin-card catalog-table-card"><div class="admin-card-head"><div><p class="eyebrow">ALL EQUIPMENT</p><h3><?= count($products) ?> active products.</h3></div><span class="table-hint">Click edit to modify</span></div><div class="table-scroll"><table class="admin-table"><thead><tr><th>Product</th><th>SKU</th><th>Price</th><th>Stock</th><th>Status</th><th></th></tr></thead><tbody><?php foreach ($products as $product): ?><tr><td><span class="table-product"><i class="mini-product-art art-<?= (int) $product['category_id'] ?>"><?= h($product['visual']) ?></i><span><strong><?= h($product['name']) ?></strong><small><?= h($product['brand']) ?> · <?= h(category_name((int) $product['category_id'])) ?></small></span></span></td><td><?= h($product['sku']) ?></td><td><?= money((float) $product['price']) ?></td><td><?= (int) $product['stock'] ?> <small>/ min <?= (int) $product['min_stock'] ?></small></td><td><?php render_availability($product); ?></td><td><a class="table-action" href="<?= h(url('admin', ['tab' => 'products', 'edit' => $product['id']])) ?>">Edit</a></td></tr><?php endforeach; ?></tbody></table></div></section>
+                <section class="admin-card catalog-table-card"><div class="admin-card-head"><div><p class="eyebrow">ALL EQUIPMENT</p><h3><?= count($products) ?> active products.</h3></div><span class="table-hint">Click edit to modify</span></div><div class="table-scroll"><table class="admin-table"><thead><tr><th>Product</th><th>SKU</th><th>Price</th><th>Stock</th><th>Status</th><th></th></tr></thead><tbody><?php foreach ($products as $product): ?><tr><td><span class="table-product"><i class="mini-product-art art-<?= (int) $product['category_id'] ?>"><?= product_visual($product) ?></i><span><strong><?= h($product['name']) ?></strong><small><?= h($product['brand']) ?> · <?= h(category_name((int) $product['category_id'])) ?></small></span></span></td><td><?= h($product['sku']) ?></td><td><?= money((float) $product['price']) ?></td><td><?= (int) $product['stock'] ?> <small>/ min <?= (int) $product['min_stock'] ?></small></td><td><?php render_availability($product); ?></td><td><a class="table-action" href="<?= h(url('admin', ['tab' => 'products', 'edit' => $product['id']])) ?>">Edit</a></td></tr><?php endforeach; ?></tbody></table></div></section>
             <?php elseif ($tab === 'inventory'): ?>
-                <div class="workspace-content-head"><div><p class="eyebrow">STOCK CONTROL</p><h2>Keep every shelf in orbit.</h2></div><span class="inventory-key"><i></i> < 5 = attention</span></div>
-                <section class="admin-card inventory-table-card"><div class="admin-card-head"><div><p class="eyebrow">LIVE INVENTORY</p><h3>Receive stock or record an adjustment.</h3></div><span class="table-hint">Each change is logged</span></div><div class="inventory-list"><?php foreach ($products as $product): ?><article class="inventory-row"><div class="inventory-product"><span class="mini-product-art art-<?= (int) $product['category_id'] ?>"><?= h($product['visual']) ?></span><div><strong><?= h($product['name']) ?></strong><small><?= h($product['sku']) ?> · Reorder at <?= (int) $product['min_stock'] ?></small></div></div><div class="stock-meter-wrap"><div class="stock-number <?= $product['stock'] < $product['min_stock'] ? 'low' : '' ?>"><?= (int) $product['stock'] ?><small>units</small></div><div class="stock-meter"><i style="width: <?= min(100, max(6, ($product['stock'] / max(1, $product['min_stock'] * 3)) * 100)) ?>%"></i></div></div><form method="post" class="inventory-adjust-form"><?= csrf_field() ?><input type="hidden" name="action" value="adjust_stock"><input type="hidden" name="return_page" value="admin"><input type="hidden" name="return_tab" value="inventory"><input type="hidden" name="product_id" value="<?= (int) $product['id'] ?>"><input type="number" name="delta" value="1" min="-<?= (int) $product['stock'] ?>" max="999" aria-label="Quantity change for <?= h($product['name']) ?>"><input name="note" placeholder="Reason (optional)" aria-label="Adjustment note"><button class="button button-small button-dark" type="submit">Apply</button></form></article><?php endforeach; ?></div></section>
+                <div class="workspace-content-head"><div><p class="eyebrow">STOCK CONTROL</p><h2>Keep every shelf in orbit.</h2></div><span class="inventory-key"><i></i> Below reorder threshold = attention</span></div>
+                <section class="admin-card inventory-table-card"><div class="admin-card-head"><div><p class="eyebrow">LIVE INVENTORY</p><h3>Receive stock or record an adjustment.</h3></div><span class="table-hint">Each change is logged</span></div><div class="inventory-list"><?php foreach ($products as $product): ?><article class="inventory-row"><div class="inventory-product"><span class="mini-product-art art-<?= (int) $product['category_id'] ?>"><?= product_visual($product) ?></span><div><strong><?= h($product['name']) ?></strong><a class="table-action" href="<?= h(url('admin', ['tab' => 'products', 'edit' => $product['id']])) ?>">Edit item &amp; photo</a><small><?= h($product['sku']) ?> · Reorder at <?= (int) $product['min_stock'] ?></small></div></div><div class="stock-meter-wrap"><div class="stock-number <?= $product['stock'] < $product['min_stock'] ? 'low' : '' ?>"><?= (int) $product['stock'] ?><small>units</small></div><div class="stock-meter"><i style="width: <?= min(100, max(6, ($product['stock'] / max(1, $product['min_stock'] * 3)) * 100)) ?>%"></i></div></div><form method="post" class="inventory-adjust-form"><?= csrf_field() ?><input type="hidden" name="action" value="adjust_stock"><input type="hidden" name="return_page" value="admin"><input type="hidden" name="return_tab" value="inventory"><input type="hidden" name="product_id" value="<?= (int) $product['id'] ?>"><input type="number" name="delta" value="1" min="-<?= (int) $product['stock'] ?>" max="999" aria-label="Quantity change for <?= h($product['name']) ?>"><input name="note" placeholder="Reason (optional)" aria-label="Adjustment note"><button class="button button-small button-dark" type="submit">Apply</button></form></article><?php endforeach; ?></div></section>
             <?php elseif ($tab === 'orders'): ?>
                 <div class="workspace-content-head"><div><p class="eyebrow">ORDER COMMAND</p><h2>From checkout to doorstep.</h2></div><span class="date-chip"><?= count($orders) ?> order<?= count($orders) === 1 ? '' : 's' ?></span></div>
-                <section class="admin-card orders-management-card"><div class="table-scroll"><table class="admin-table orders-table"><thead><tr><th>Order</th><th>Customer</th><th>Items</th><th>Total</th><th>Delivery</th><th>Status</th><th></th></tr></thead><tbody><?php foreach ($orders as $order): ?><tr><td><strong><?= h($order['number']) ?></strong><small><?= h(format_date($order['created_at'], 'd M, h:i A')) ?></small></td><td><strong><?= h($order['customer_name']) ?></strong><small><?= h($order['address']['city']) ?></small></td><td><?= count($order['lines']) ?> item<?= count($order['lines']) === 1 ? '' : 's' ?></td><td><strong><?= money((float) $order['grand_total']) ?></strong><small><?= h(strtoupper($order['payment_method'])) ?> · <?= h($order['payment_status']) ?></small></td><td><form method="post" class="inline-select-form"><?= csrf_field() ?><input type="hidden" name="action" value="assign_delivery"><input type="hidden" name="return_page" value="admin"><input type="hidden" name="return_tab" value="orders"><input type="hidden" name="order_id" value="<?= (int) $order['id'] ?>"><select name="delivery_partner_id" onchange="this.form.submit()"><option value="">Assign partner</option><?php foreach ($partners as $partner): ?><option value="<?= (int) $partner['id'] ?>" <?= (int) $order['delivery_partner_id'] === (int) $partner['id'] ? 'selected' : '' ?>><?= h(explode(' ', $partner['name'])[0]) ?></option><?php endforeach; ?></select></form></td><td><span class="status-pill <?= h(status_tone($order['status'])) ?>"><?= h(status_label($order['status'])) ?></span></td><td><div class="row-actions"><a class="table-action" href="<?= h(url('invoice', ['id' => $order['id'], 'track' => 1])) ?>">Track</a><?php if (!in_array($order['status'], ['delivered', 'cancelled'], true)): ?><form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="update_order_status"><input type="hidden" name="return_page" value="admin"><input type="hidden" name="return_tab" value="orders"><input type="hidden" name="order_id" value="<?= (int) $order['id'] ?>"><input type="hidden" name="status" value="packed"><button class="table-action" type="submit">Pack</button></form><?php endif; ?></div></td></tr><?php endforeach; ?></tbody></table></div></section>
+                <section class="admin-card orders-management-card"><div class="table-scroll"><table class="admin-table orders-table"><thead><tr><th>Order</th><th>Customer</th><th>Items</th><th>Total</th><th>Delivery</th><th>Status</th><th></th></tr></thead><tbody><?php foreach ($orders as $order): ?><tr><td><strong><?= h($order['number']) ?></strong><small><?= h(format_date($order['created_at'], 'd M, h:i A')) ?></small></td><td><strong><?= h($order['customer_name']) ?></strong><small><?= h($order['address']['city']) ?></small></td><td><?= count($order['lines']) ?> item<?= count($order['lines']) === 1 ? '' : 's' ?></td><td><strong><?= money((float) $order['grand_total']) ?></strong><small><?= h(strtoupper($order['payment_method'])) ?> · <?= h($order['payment_status']) ?></small></td><td><form method="post" class="inline-select-form"><?= csrf_field() ?><input type="hidden" name="action" value="assign_delivery"><input type="hidden" name="return_page" value="admin"><input type="hidden" name="return_tab" value="orders"><input type="hidden" name="order_id" value="<?= (int) $order['id'] ?>"><select name="delivery_partner_id" aria-label="Assign delivery partner" <?= !in_array($order['status'], ['placed', 'confirmed', 'packed', 'assigned'], true) ? 'disabled' : '' ?>><option value="">Choose partner</option><?php foreach ($partners as $partner): if ((int) $partner['id'] === (int) $order['user_id']) continue; ?><option value="<?= (int) $partner['id'] ?>" <?= (int) $order['delivery_partner_id'] === (int) $partner['id'] ? 'selected' : '' ?>><?= h(explode(' ', $partner['name'])[0]) ?></option><?php endforeach; ?></select><button class="table-action" type="submit" <?= !in_array($order['status'], ['placed', 'confirmed', 'packed', 'assigned'], true) ? 'disabled' : '' ?>>Assign</button></form></td><td><span class="status-pill <?= h(status_tone($order['status'])) ?>"><?= h(status_label($order['status'])) ?></span></td><td><?php render_order_actions($order); ?></td></tr><?php endforeach; ?></tbody></table></div></section>
+            <?php elseif ($tab === 'settings'): ?>
+                <?php render_branding_settings(); ?>
+            <?php elseif ($tab === 'partners'): ?>
+                <?php render_delivery_partners_admin($partners); ?>
             <?php elseif ($tab === 'finance'): ?>
                 <div class="workspace-content-head"><div><p class="eyebrow">FINANCE DESK</p><h2>Numbers with context.</h2></div><span class="date-chip"><?= date('F Y') ?></span></div>
-                <div class="finance-summary"><article><small>Monthly sales revenue</small><strong><?= money((float) $stats['month_revenue']) ?></strong></article><span>−</span><article><small>Item cost snapshots</small><strong><?= money((float) $stats['month_cost']) ?></strong></article><span>−</span><article><small>Operating expenses</small><strong><?= money((float) $stats['month_expenses']) ?></strong></article><span>=</span><article class="profit"><small>Net profit</small><strong><?= money((float) $stats['month_profit']) ?></strong></article></div>
+                <div class="finance-summary finance-with-income">
+                    <article><small>Sales after discounts, excluding GST and delivery</small><strong><?= money((float) $stats['month_net_sales']) ?></strong></article>
+                    <article><small>+ External income</small><strong><?= money((float) $stats['month_income']) ?></strong></article>
+                    <article><small>− Item cost snapshots</small><strong><?= money((float) $stats['month_cost']) ?></strong></article>
+                    <article><small>− Operating expenses</small><strong><?= money((float) $stats['month_expenses']) ?></strong></article>
+                    <article class="profit"><small>Net profit</small><strong><?= money((float) $stats['month_profit']) ?></strong></article>
+                </div>
                 <div class="admin-main-grid lower-grid"><section class="admin-card expense-form-card"><p class="eyebrow">LOG AN EXPENSE</p><h3>Keep profit honest.</h3><form method="post" class="stacked-form"><?= csrf_field() ?><input type="hidden" name="action" value="add_expense"><input type="hidden" name="return_page" value="admin"><input type="hidden" name="return_tab" value="finance"><label>Date<input type="date" name="date" value="<?= date('Y-m-d') ?>"></label><label>Category<input name="category" required placeholder="e.g. Utilities"></label><label>Description<input name="description" required placeholder="What was this for?"></label><label>Amount<input type="number" min="0.01" step="0.01" name="amount" required placeholder="0.00"></label><button class="button button-primary" type="submit">Add expense <span>→</span></button></form></section><section class="admin-card expenses-list-card"><div class="admin-card-head"><div><p class="eyebrow">RECENT OPERATING COSTS</p><h3>Expense ledger.</h3></div></div><div class="expense-list"><?php foreach (store()->expenses() as $expense): ?><div><span class="expense-icon">◒</span><span><strong><?= h($expense['category']) ?></strong><small><?= h($expense['description']) ?> · <?= h(format_date($expense['date'], 'd M')) ?></small></span><em>−<?= money((float) $expense['amount']) ?></em></div><?php endforeach; ?></div></section></div>
+                <?php render_external_income(); ?>
             <?php endif; ?>
         </div>
     </section>
@@ -693,8 +714,8 @@ function render_delivery_page(array $user): void
         <div class="delivery-signal"><span>↗</span><div><strong><?= count($activeOrders) ?> active drop<?= count($activeOrders) === 1 ? '' : 's' ?></strong><small>Today’s delivery queue</small></div></div>
     </section>
     <section class="delivery-layout content-section">
-        <aside class="delivery-side-card"><div class="delivery-avatar"><?= h(mb_strtoupper(mb_substr($user['name'], 0, 1))) ?></div><strong><?= h($user['name']) ?></strong><small>Verified delivery partner</small><div class="delivery-metric"><b><?= count($orders) ?></b><span>assigned<br>orders</span></div><div class="delivery-metric"><b><?= count(array_filter($orders, static fn(array $order): bool => $order['status'] === 'delivered')) ?></b><span>completed<br>drops</span></div><div class="delivery-side-note"><span>◈</span><p>Customer details are only visible for orders assigned to you.</p></div></aside>
-        <div class="delivery-content"><div class="delivery-content-head"><div><p class="eyebrow">YOUR QUEUE</p><h2>Make every handoff count.</h2></div><span class="live-indicator"><i></i> Updated live</span></div><?php if ($orders): ?><div class="delivery-order-list"><?php foreach ($orders as $order): $nextStatus = $order['status'] === 'assigned' ? 'out_for_delivery' : ($order['status'] === 'out_for_delivery' ? 'delivered' : null); ?><article class="delivery-order-card <?= $order['status'] === 'delivered' ? 'completed' : '' ?>"><div class="delivery-order-head"><div><span class="order-number"><?= h($order['number']) ?></span><small><?= count($order['lines']) ?> item<?= count($order['lines']) === 1 ? '' : 's' ?> · <?= money((float) $order['grand_total']) ?></small></div><span class="status-pill <?= h(status_tone($order['status'])) ?>"><?= h(status_label($order['status'])) ?></span></div><div class="delivery-address"><span>⌖</span><div><strong><?= h($order['address']['recipient']) ?> · <?= h($order['address']['phone']) ?></strong><p><?= h($order['address']['line1']) ?>, <?= h($order['address']['city']) ?> — <?= h($order['address']['postal_code']) ?></p></div></div><div class="delivery-products"><?php foreach ($order['lines'] as $line): ?><span><?= h($line['visual']) ?> <?= h($line['name']) ?> <b>×<?= (int) $line['quantity'] ?></b></span><?php endforeach; ?></div><div class="delivery-card-actions"><a class="text-button" href="<?= h(url('invoice', ['id' => $order['id'], 'track' => 1])) ?>">Open tracking</a><?php if ($nextStatus): ?><form method="post" class="delivery-update-form"><?= csrf_field() ?><input type="hidden" name="action" value="update_order_status"><input type="hidden" name="return_page" value="delivery"><input type="hidden" name="order_id" value="<?= (int) $order['id'] ?>"><input type="hidden" name="status" value="<?= h($nextStatus) ?>"><input name="note" placeholder="<?= $nextStatus === 'delivered' ? 'Delivery note (optional)' : 'Location / pickup note (optional)' ?>"><button class="button button-primary" type="submit"><?= $nextStatus === 'delivered' ? 'Mark delivered ✓' : 'Start delivery ↗' ?></button></form><?php else: ?><span class="delivery-complete">✓ Delivery complete</span><?php endif; ?></div></article><?php endforeach; ?></div><?php else: ?><div class="empty-state"><div class="empty-orb">↗</div><p class="eyebrow">CLEAR ROUTE</p><h2>No delivery jobs are assigned yet.</h2><p>New assignments from the store administrator will appear right here.</p></div><?php endif; ?></div>
+        <aside class="delivery-side-card"><div class="delivery-avatar"><?= avatar_content($user) ?></div><strong><?= h($user['name']) ?></strong><small>Verified delivery partner</small><div class="delivery-metric"><b><?= count($orders) ?></b><span>assigned<br>orders</span></div><div class="delivery-metric"><b><?= count(array_filter($orders, static fn(array $order): bool => $order['status'] === 'delivered')) ?></b><span>completed<br>drops</span></div><div class="delivery-side-note"><span>◈</span><p>Customer details are only visible for orders assigned to you.</p></div></aside>
+        <div class="delivery-content"><div class="delivery-content-head"><div><p class="eyebrow">YOUR QUEUE</p><h2>Make every handoff count.</h2></div><span class="live-indicator"><i></i> Updated live</span></div><?php if ($orders): ?><div class="delivery-order-list"><?php foreach ($orders as $order): $nextStatus = $order['status'] === 'assigned' ? 'out_for_delivery' : ($order['status'] === 'out_for_delivery' ? 'delivered' : null); ?><article class="delivery-order-card <?= $order['status'] === 'delivered' ? 'completed' : '' ?>"><div class="delivery-order-head"><div><span class="order-number"><?= h($order['number']) ?></span><small><?= count($order['lines']) ?> item<?= count($order['lines']) === 1 ? '' : 's' ?> · <?= money((float) $order['grand_total']) ?></small></div><span class="status-pill <?= h(status_tone($order['status'])) ?>"><?= h(status_label($order['status'])) ?></span></div><div class="delivery-address"><span>⌖</span><div><strong><?= h($order['address']['recipient']) ?> · <?= h($order['address']['phone']) ?></strong><p><?= h($order['address']['line1']) ?>, <?= h($order['address']['city']) ?> — <?= h($order['address']['postal_code']) ?></p></div></div><div class="delivery-products"><?php foreach ($order['lines'] as $line): ?><span><?= product_visual($line) ?> <?= h($line['name']) ?> <b>×<?= (int) $line['quantity'] ?></b></span><?php endforeach; ?></div><div class="delivery-card-actions"><a class="text-button" href="<?= h(url('invoice', ['id' => $order['id'], 'track' => 1])) ?>">Open tracking</a><?php if ($nextStatus): ?><form method="post" class="delivery-update-form"><?= csrf_field() ?><input type="hidden" name="action" value="update_order_status"><input type="hidden" name="return_page" value="delivery"><input type="hidden" name="order_id" value="<?= (int) $order['id'] ?>"><input type="hidden" name="status" value="<?= h($nextStatus) ?>"><?php if ($nextStatus === 'delivered'): ?><input name="verification_code" required pattern="[0-9]{6}" maxlength="6" inputmode="numeric" autocomplete="off" placeholder="Customer’s 6-digit code" aria-label="Delivery verification code"><?php endif; ?><input name="note" aria-label="Delivery note" placeholder="<?= $nextStatus === 'delivered' ? 'Delivery note (optional)' : 'Location / pickup note (optional)' ?>"><button class="button button-primary" type="submit"><?= $nextStatus === 'delivered' ? 'Mark delivered ✓' : 'Start delivery ↗' ?></button></form><?php else: ?><span class="delivery-complete"><?= $order['status'] === 'cancelled' ? 'Order cancelled' : '✓ Delivery complete' ?></span><?php endif; ?></div></article><?php endforeach; ?></div><?php else: ?><div class="empty-state"><div class="empty-orb">↗</div><p class="eyebrow">CLEAR ROUTE</p><h2>No delivery jobs are assigned yet.</h2><p>New assignments from the store administrator will appear right here.</p></div><?php endif; ?></div>
     </section>
     <?php
 }

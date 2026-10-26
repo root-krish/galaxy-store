@@ -3,10 +3,15 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/app/bootstrap.php';
 require_once __DIR__ . '/app/views.php';
+require_once __DIR__ . '/app/features.php';
+
+if (($_GET['page'] ?? '') === 'media' && in_array($_SERVER['REQUEST_METHOD'], ['GET', 'HEAD'], true)) {
+    image_uploads()->serve(is_string($_GET['image'] ?? null) ? $_GET['image'] : '');
+}
 
 function post_return_page(string $fallback = 'home'): never
 {
-    $allowed = ['home', 'shop', 'cart', 'checkout', 'account', 'admin', 'delivery'];
+    $allowed = ['home', 'shop', 'cart', 'checkout', 'account', 'admin', 'delivery', 'login', 'register', 'profile'];
     $page = (string) ($_POST['return_page'] ?? $fallback);
     $page = in_array($page, $allowed, true) ? $page : $fallback;
     $parameters = [];
@@ -19,6 +24,7 @@ function post_return_page(string $fallback = 'home'): never
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf();
     $action = (string) ($_POST['action'] ?? '');
+    $uploadedImage = null;
 
     try {
         switch ($action) {
@@ -70,7 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     redirect('admin');
                 }
                 if ($user['role'] === 'delivery') {
-                    redirect('delivery');
+                    redirect(in_array($next, ['home', 'shop', 'cart', 'checkout', 'account', 'profile'], true) ? $next : 'delivery');
                 }
                 redirect(in_array($next, $allowedNext, true) ? $next : 'account');
 
@@ -84,7 +90,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 $user = store()->register(compact('name', 'email', 'phone', 'password'));
                 login_user($user);
-                flash('success', 'Your player profile is ready. Welcome to Sports Galaxy!');
+                flash('success', 'Your player profile is ready. Welcome to ' . shop_name() . '!');
                 redirect('account');
 
             case 'logout':
@@ -93,7 +99,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 redirect('home');
 
             case 'checkout':
-                $user = require_role('customer');
+                $user = require_shopper();
                 foreach (['recipient', 'phone', 'address', 'city', 'postal_code'] as $field) {
                     if (trim((string) ($_POST[$field] ?? '')) === '') {
                         throw new RuntimeException('Please complete the delivery details before placing your order.');
@@ -127,7 +133,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     (int) ($_POST['order_id'] ?? 0),
                     (string) ($_POST['status'] ?? ''),
                     $actor,
-                    trim((string) ($_POST['note'] ?? ''))
+                    trim((string) ($_POST['note'] ?? '')),
+                    trim((string) ($_POST['verification_code'] ?? ''))
                 );
                 flash('success', $order['number'] . ' is now ' . status_label($order['status']) . '.');
                 post_return_page($actor['role'] === 'delivery' ? 'delivery' : 'admin');
@@ -142,7 +149,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ((float) ($_POST['price'] ?? -1) < 0 || (float) ($_POST['cost'] ?? -1) < 0) {
                     throw new RuntimeException('Prices and costs cannot be negative.');
                 }
-                $product = store()->saveProduct($_POST);
+                $attributes = $_POST;
+                unset($attributes['image_path']);
+                $uploadedImage = image_uploads()->receive('product_photo');
+                if ($uploadedImage !== null) {
+                    $attributes['image_path'] = $uploadedImage;
+                } elseif (isset($_POST['default_photo'])) {
+                    $attributes['image_path'] = null;
+                }
+                $product = store()->saveProduct($attributes);
                 flash('success', $product['name'] . ' has been saved to the catalog.');
                 post_return_page('admin');
 
@@ -155,6 +170,58 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $product = store()->adjustStock((int) ($_POST['product_id'] ?? 0), $delta, (string) ($_POST['note'] ?? ''), $actor);
                 flash('success', $product['name'] . ' now has ' . $product['stock'] . ' unit(s) in stock.');
                 post_return_page('admin');
+
+            case 'update_customer_profile':
+                $actor = require_role('customer');
+                store()->updateCustomerProfile($_POST, $actor);
+                flash('success', 'Your contact details have been updated.');
+                redirect('profile');
+
+            case 'update_delivery_partner':
+                $actor = require_role('admin');
+                $partner = store()->updateDeliveryPartner((int) ($_POST['partner_id'] ?? 0), $_POST, $actor);
+                flash('success', 'Contact details updated for ' . $partner['name'] . '.');
+                redirect('admin', ['tab' => 'partners']);
+
+            case 'save_branding':
+                $actor = require_role('admin');
+                $attributes = $_POST;
+                unset($attributes['shop_logo']);
+                $uploadedImage = image_uploads()->receive('shop_logo_file');
+                if ($uploadedImage !== null) {
+                    $attributes['shop_logo'] = $uploadedImage;
+                } elseif (isset($_POST['default_photo'])) {
+                    $attributes['shop_logo'] = null;
+                }
+                store()->saveBranding($attributes, $actor);
+                flash('success', 'Shop name, logo, and colours saved.');
+                redirect('admin', ['tab' => 'settings']);
+
+            case 'reset_branding':
+                $actor = require_role('admin');
+                store()->resetBranding($actor);
+                flash('success', 'Default shop name, logo, and colours restored.');
+                redirect('admin', ['tab' => 'settings']);
+
+            case 'create_delivery_partner':
+                $actor = require_role('admin');
+                $partner = store()->createDeliveryPartner($_POST, $actor);
+                flash('success', 'Delivery partner account created for ' . $partner['name'] . '.');
+                redirect('admin', ['tab' => 'partners']);
+
+            case 'add_income':
+                $actor = require_role('admin');
+                store()->addIncome($_POST, $actor);
+                flash('success', 'External income recorded. Monthly profit has been recalculated.');
+                redirect('admin', ['tab' => 'finance']);
+
+            case 'update_profile_photo':
+                $actor = require_login();
+                $uploadedImage = image_uploads()->receive('profile_photo');
+                $image = $uploadedImage ?? (isset($_POST['default_photo']) ? null : ($actor['profile_image'] ?? null));
+                store()->updateProfileImage($actor, $image);
+                flash('success', 'Your profile photo has been saved.');
+                redirect('profile');
 
             case 'add_expense':
                 $actor = require_role('admin');
@@ -169,13 +236,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new RuntimeException('That action is not available.');
         }
     } catch (Throwable $exception) {
-        flash('error', $exception->getMessage());
-        post_return_page('home');
+        image_uploads()->discard($uploadedImage);
+        if (!$exception instanceof RuntimeException || $exception instanceof JsonException) {
+            error_log((string) $exception);
+            flash('error', 'We could not save your changes. Please try again.');
+        } else {
+            flash('error', $exception->getMessage());
+        }
+        post_return_page(match ($action) { 'login' => 'login', 'register' => 'register', 'update_customer_profile' => 'profile', 'update_delivery_partner' => 'admin', 'save_branding' => 'admin', 'reset_branding' => 'admin', 'create_delivery_partner' => 'admin', 'add_income' => 'admin', 'update_profile_photo' => 'profile', default => 'home' });
     }
 }
 
 $page = (string) ($_GET['page'] ?? 'home');
-$allowedPages = ['home', 'shop', 'cart', 'checkout', 'login', 'register', 'account', 'invoice', 'admin', 'delivery'];
+$allowedPages = ['home', 'shop', 'cart', 'checkout', 'login', 'register', 'account', 'invoice', 'admin', 'delivery', 'profile'];
 if (!in_array($page, $allowedPages, true)) {
     $page = 'home';
 }
@@ -194,7 +267,11 @@ switch ($page) {
         render_cart_page();
         break;
     case 'checkout':
-        $user = require_role('customer');
+        $user = require_shopper();
+        if (store()->cartDetails(cart())['items'] === []) {
+            flash('warning', 'Add something to your cart before checking out.');
+            redirect('cart');
+        }
         render_header('Checkout', 'checkout');
         render_checkout_page($user);
         break;
@@ -213,9 +290,14 @@ switch ($page) {
         render_register_page();
         break;
     case 'account':
-        $user = require_role('customer');
+        $user = require_shopper();
         render_header('My player profile', 'account');
         render_account_page($user);
+        break;
+    case 'profile':
+        $user = require_login();
+        render_header('Your profile', 'profile');
+        render_profile_page($user);
         break;
     case 'invoice':
         $user = require_login();

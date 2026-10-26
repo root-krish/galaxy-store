@@ -70,29 +70,161 @@ final class Store
 
     public function register(array $attributes): array
     {
-        return $this->write(function (array &$data) use ($attributes): array {
-            $email = mb_strtolower(trim((string) $attributes['email']));
+        // Public registration can never provision staff, even with a forged role field.
+        return $this->createAccount($attributes, 'customer');
+    }
+
+    public function createDeliveryPartner(array $attributes, array $actor): array
+    {
+        return $this->createAccount($attributes, 'delivery', $actor);
+    }
+
+    private function requireAdmin(array $data, array $actor): void
+    {
+        $stored = $this->findById($data['users'], (int) ($actor['id'] ?? 0));
+        if (!$stored || !$stored['is_active'] || $stored['role'] !== 'admin') {
+            throw new RuntimeException('Only an administrator can perform this action.');
+        }
+    }
+
+    private function createAccount(array $attributes, string $role, ?array $actor = null): array
+    {
+        return $this->write(function (array &$data) use ($attributes, $role, $actor): array {
+            if ($role === 'delivery') {
+                $this->requireAdmin($data, $actor ?? []);
+            }
+            $email = mb_strtolower(trim((string) ($attributes['email'] ?? '')));
             foreach ($data['users'] as $user) {
                 if ($user['email'] === $email) {
                     throw new RuntimeException('An account already exists for this email address.');
                 }
             }
 
+            if (mb_strlen(trim((string) ($attributes['name'] ?? ''))) < 2
+                || mb_strlen(trim((string) ($attributes['name'] ?? ''))) > 120
+                || !filter_var($email, FILTER_VALIDATE_EMAIL) || strlen($email) > 190
+                || mb_strlen(trim((string) ($attributes['phone'] ?? ''))) < 7
+                || mb_strlen(trim((string) ($attributes['phone'] ?? ''))) > 30
+                || strlen((string) ($attributes['password'] ?? '')) < 8
+                || strlen((string) ($attributes['password'] ?? '')) > 72) {
+                throw new RuntimeException('Enter a name, valid email, phone number, and a password between 8 and 72 bytes.');
+            }
             $id = $this->nextId($data['users']);
             $user = [
                 'id' => $id,
                 'name' => trim((string) $attributes['name']),
                 'email' => $email,
                 'phone' => trim((string) $attributes['phone']),
-                'role' => 'customer',
+                'role' => $role,
+                'profile_image' => null,
                 'password_hash' => password_hash((string) $attributes['password'], PASSWORD_DEFAULT),
                 'is_active' => true,
                 'created_at' => date('Y-m-d H:i:s'),
             ];
             $data['users'][] = $user;
-            $this->notify($data, $id, 'welcome', 'Welcome to Sports Galaxy', 'Your account is ready. Explore the latest sports essentials.');
+            $this->notify($data, $id, 'welcome', 'Welcome to ' . ($data['settings']['shop_name'] ?? SG_NAME), 'Your account is ready. Explore the latest sports essentials.');
             return $user;
         });
+    }
+
+    private function validatedContact(array $data, array $attributes, int $excludeId): array
+    {
+        $name = trim((string) ($attributes['name'] ?? ''));
+        $email = mb_strtolower(trim((string) ($attributes['email'] ?? '')));
+        $phone = trim((string) ($attributes['phone'] ?? ''));
+        $digits = preg_replace('/[^0-9]/', '', $phone);
+        if (mb_strlen($name) < 2 || mb_strlen($name) > 120 || !filter_var($email, FILTER_VALIDATE_EMAIL) || strlen($email) > 190
+            || preg_match('/^\+?[0-9 ()-]{7,30}$/D', $phone) !== 1 || strlen($digits) < 7 || strlen($digits) > 15) {
+            throw new RuntimeException('Enter a name, valid email address, and a valid phone number.');
+        }
+        foreach ($data['users'] as $user) {
+            if ((int) $user['id'] !== $excludeId && mb_strtolower($user['email']) === $email) {
+                throw new RuntimeException('An account already exists for this email address.');
+            }
+        }
+        return compact('name', 'email', 'phone');
+    }
+
+    public function updateCustomerProfile(array $attributes, array $actor): array
+    {
+        return $this->write(function (array &$data) use ($attributes, $actor): array {
+            $index = $this->findIndex($data['users'], (int) ($actor['id'] ?? 0));
+            if ($index === null || !$data['users'][$index]['is_active'] || $data['users'][$index]['role'] !== 'customer') {
+                throw new RuntimeException('Only customers can edit their own contact details. Delivery partner details are managed by the administrator.');
+            }
+            $contact = $this->validatedContact($data, $attributes, (int) $data['users'][$index]['id']);
+            $data['users'][$index] = array_replace($data['users'][$index], $contact);
+            return $data['users'][$index];
+        });
+    }
+
+    public function updateDeliveryPartner(int $partnerId, array $attributes, array $actor): array
+    {
+        return $this->write(function (array &$data) use ($partnerId, $attributes, $actor): array {
+            $this->requireAdmin($data, $actor);
+            $index = $this->findIndex($data['users'], $partnerId);
+            if ($index === null || $data['users'][$index]['role'] !== 'delivery') {
+                throw new RuntimeException('Delivery partner not found.');
+            }
+            $contact = $this->validatedContact($data, $attributes, $partnerId);
+            $password = (string) ($attributes['password'] ?? '');
+            if ($password !== '') {
+                if (strlen($password) < 8 || strlen($password) > 72) {
+                    throw new RuntimeException('Use a password between 8 and 72 bytes, or leave it empty to keep the current password.');
+                }
+                $contact['password_hash'] = password_hash($password, PASSWORD_DEFAULT);
+            }
+            $data['users'][$index] = array_replace($data['users'][$index], $contact);
+            return $data['users'][$index];
+        });
+    }
+
+    public function settings(): array
+    {
+        return array_replace(Branding::DEFAULTS, $this->read()['settings']);
+    }
+
+    public function saveBranding(array $attributes, array $actor): array
+    {
+        return $this->write(function (array &$data) use ($attributes, $actor): array {
+            $this->requireAdmin($data, $actor);
+            $current = array_replace(Branding::DEFAULTS, $data['settings']);
+            $branding = Branding::validate(array_replace($current, array_intersect_key($attributes, Branding::DEFAULTS)));
+            $data['settings'] = array_replace($data['settings'], $branding);
+            return $branding;
+        });
+    }
+
+    public function resetBranding(array $actor): void
+    {
+        $this->write(function (array &$data) use ($actor): void {
+            $this->requireAdmin($data, $actor);
+            $data['settings'] = array_replace($data['settings'], Branding::DEFAULTS);
+        });
+    }
+
+    public function quote(array $cart, string $coupon = ''): array
+    {
+        $data = $this->read();
+        return $this->calculateTotals($data, $this->buildCart($data, $cart)['subtotal'], $coupon);
+    }
+
+    private function calculateTotals(array $data, float $subtotal, string $coupon): array
+    {
+        $coupon = mb_strtoupper(trim($coupon));
+        if ($coupon !== '' && $coupon !== 'GALAXY10') {
+            throw new RuntimeException('That offer code is not available. Try GALAXY10.');
+        }
+        $discount = $coupon === 'GALAXY10' ? round($subtotal * 0.10, 2) : 0.0;
+        $taxable = max(0, $subtotal - $discount);
+        $taxRate = (float) $data['settings']['tax_rate'];
+        $tax = round($taxable * $taxRate / 100, 2);
+        $shipping = $subtotal === 0.0 || $taxable >= (float) $data['settings']['free_shipping_at'] ? 0.0 : (float) $data['settings']['shipping_fee'];
+        return ['subtotal' => $subtotal, 'discount' => $discount, 'tax_rate' => $taxRate,
+            'tax' => $tax, 'shipping' => $shipping, 'grand_total' => round($taxable + $tax + $shipping, 2),
+            'discount_name' => $discount > 0 ? 'GALAXY10 (10% off)' : null,
+            'shipping_fee' => (float) $data['settings']['shipping_fee'],
+            'free_shipping_at' => (float) $data['settings']['free_shipping_at']];
     }
 
     public function cartDetails(array $cart): array
@@ -104,7 +236,13 @@ final class Store
     public function createOrder(array $user, array $cart, array $checkout): array
     {
         return $this->write(function (array &$data) use ($user, $cart, $checkout): array {
+            if (!in_array($user['role'], ['customer', 'delivery'], true) || !$user['is_active']) {
+                throw new RuntimeException('A customer or delivery partner account is required to place an order.');
+            }
             $cartData = $this->buildCart($data, $cart);
+            if (count($cartData['items']) !== count($cart)) {
+                throw new RuntimeException('Some cart items are unavailable. Update your cart and try again.');
+            }
             if ($cartData['items'] === []) {
                 throw new RuntimeException('Your cart is empty.');
             }
@@ -115,21 +253,9 @@ final class Store
                 }
             }
 
-            $coupon = mb_strtoupper(trim((string) ($checkout['coupon'] ?? '')));
-            $discount = 0.0;
-            $discountName = null;
-            if ($coupon === 'GALAXY10') {
-                $discount = round($cartData['subtotal'] * 0.10, 2);
-                $discountName = 'GALAXY10 (10% off)';
-            } elseif ($coupon !== '') {
-                throw new RuntimeException('That offer code is not available. Try GALAXY10.');
-            }
-
-            $taxRate = (float) $data['settings']['tax_rate'];
-            $taxable = max(0, $cartData['subtotal'] - $discount);
-            $tax = round($taxable * $taxRate / 100, 2);
-            $shipping = $taxable >= (float) $data['settings']['free_shipping_at'] ? 0.0 : (float) $data['settings']['shipping_fee'];
-            $grandTotal = round($taxable + $tax + $shipping, 2);
+            $totals = $this->calculateTotals($data, $cartData['subtotal'], (string) ($checkout['coupon'] ?? ''));
+            ['discount' => $discount, 'discount_name' => $discountName, 'tax_rate' => $taxRate,
+                'tax' => $tax, 'shipping' => $shipping, 'grand_total' => $grandTotal] = $totals;
             $orderId = $this->nextId($data['orders']);
             $lines = [];
 
@@ -145,6 +271,7 @@ final class Store
                         'name' => $product['name'],
                         'brand' => $product['brand'],
                         'visual' => $product['visual'],
+                        'image_path' => $product['image_path'] ?? null,
                         'unit_price' => (float) $product['price'],
                         'unit_cost' => (float) $product['cost'],
                         'quantity' => $item['quantity'],
@@ -173,11 +300,12 @@ final class Store
                 'city' => trim((string) $checkout['city']),
                 'postal_code' => trim((string) $checkout['postal_code']),
             ];
-            $paymentMethod = in_array($checkout['payment_method'], ['cod', 'upi', 'card'], true) ? $checkout['payment_method'] : 'cod';
+            $paymentMethod = in_array($checkout['payment_method'] ?? 'cod', ['cod', 'upi', 'card'], true) ? $checkout['payment_method'] : 'cod';
             $now = date('Y-m-d H:i:s');
             $order = [
                 'id' => $orderId,
                 'number' => 'SG-' . date('Ymd') . '-' . str_pad((string) $orderId, 4, '0', STR_PAD_LEFT),
+                'delivery_code' => (string) random_int(100000, 999999),
                 'tracking_code' => 'TRK' . date('ymd') . str_pad((string) $orderId, 5, '0', STR_PAD_LEFT),
                 'user_id' => $user['id'],
                 'customer_name' => $user['name'],
@@ -194,12 +322,13 @@ final class Store
                 'payment_method' => $paymentMethod,
                 'payment_status' => $paymentMethod === 'cod' ? 'pending' : 'paid',
                 'status' => 'placed',
+                'cancellation_reason' => null,
                 'delivery_partner_id' => null,
                 'delivery_events' => [[
                     'status' => 'placed',
                     'note' => 'Order received and queued for confirmation.',
                     'at' => $now,
-                    'actor' => 'Sports Galaxy',
+                    'actor' => $data['settings']['shop_name'] ?? SG_NAME,
                 ]],
                 'created_at' => $now,
                 'updated_at' => $now,
@@ -221,7 +350,7 @@ final class Store
     {
         $data = $this->read();
         $orders = array_values(array_filter($data['orders'], static fn(array $order): bool => (int) $order['user_id'] === $userId));
-        usort($orders, static fn(array $a, array $b): int => strcmp($b['created_at'], $a['created_at']));
+        usort($orders, static fn(array $a, array $b): int => strcmp($b['created_at'], $a['created_at']) ?: ((int) $b['id'] <=> (int) $a['id']));
         return $orders;
     }
 
@@ -229,7 +358,7 @@ final class Store
     {
         $data = $this->read();
         $orders = $data['orders'];
-        usort($orders, static fn(array $a, array $b): int => strcmp($b['created_at'], $a['created_at']));
+        usort($orders, static fn(array $a, array $b): int => strcmp($b['created_at'], $a['created_at']) ?: ((int) $b['id'] <=> (int) $a['id']));
         return $orders;
     }
 
@@ -242,7 +371,7 @@ final class Store
     public function deliveryPartners(): array
     {
         $data = $this->read();
-        return array_values(array_filter($data['users'], static fn(array $user): bool => $user['role'] === 'delivery'));
+        return array_values(array_filter($data['users'], static fn(array $user): bool => $user['role'] === 'delivery' && $user['is_active']));
     }
 
     public function assignDelivery(int $orderId, int $partnerId, array $actor): array
@@ -250,10 +379,16 @@ final class Store
         return $this->write(function (array &$data) use ($orderId, $partnerId, $actor): array {
             $orderIndex = $this->findIndex($data['orders'], $orderId);
             $partner = $this->findById($data['users'], $partnerId);
-            if ($orderIndex === null || !$partner || $partner['role'] !== 'delivery') {
+            if ($actor['role'] !== 'admin' || $orderIndex === null || !$partner || !$partner['is_active'] || $partner['role'] !== 'delivery') {
                 throw new RuntimeException('The order or delivery partner could not be found.');
             }
             $order =& $data['orders'][$orderIndex];
+            if (!in_array($order['status'], ['placed', 'confirmed', 'packed', 'assigned'], true)) {
+                throw new RuntimeException('Only open orders awaiting dispatch can be assigned.');
+            }
+            if ((int) $order['user_id'] === $partnerId) {
+                throw new RuntimeException('Assign a different partner to deliver this partner’s personal purchase.');
+            }
             $order['delivery_partner_id'] = $partnerId;
             $order['status'] = 'assigned';
             $order['updated_at'] = date('Y-m-d H:i:s');
@@ -269,20 +404,20 @@ final class Store
         });
     }
 
-    public function updateOrderStatus(int $orderId, string $status, array $actor, string $note = ''): array
+    public function updateOrderStatus(int $orderId, string $status, array $actor, string $note = '', string $verificationCode = ''): array
     {
         $allowed = ['confirmed', 'packed', 'out_for_delivery', 'delivered', 'cancelled'];
         if (!in_array($status, $allowed, true)) {
             throw new RuntimeException('That delivery status is not valid.');
         }
 
-        return $this->write(function (array &$data) use ($orderId, $status, $actor, $note): array {
+        return $this->write(function (array &$data) use ($orderId, $status, $actor, $note, $verificationCode): array {
             $orderIndex = $this->findIndex($data['orders'], $orderId);
             if ($orderIndex === null) {
                 throw new RuntimeException('Order not found.');
             }
             $order =& $data['orders'][$orderIndex];
-            if ($actor['role'] === 'delivery' && (int) ($order['delivery_partner_id'] ?? 0) !== (int) $actor['id']) {
+            if ($actor['role'] === 'delivery' && ((int) ($order['delivery_partner_id'] ?? 0) !== (int) $actor['id'] || (int) $order['user_id'] === (int) $actor['id'])) {
                 throw new RuntimeException('You can only update orders assigned to you.');
             }
             if ($actor['role'] === 'delivery' && !in_array($status, ['out_for_delivery', 'delivered'], true)) {
@@ -290,6 +425,40 @@ final class Store
             }
             if ($order['status'] === 'delivered' || $order['status'] === 'cancelled') {
                 throw new RuntimeException('This order is already closed.');
+            }
+            $transitions = [
+                'placed' => ['confirmed', 'packed', 'cancelled'],
+                'confirmed' => ['packed', 'cancelled'],
+                'packed' => ['cancelled'],
+                'assigned' => ['out_for_delivery', 'cancelled'],
+                'out_for_delivery' => ['delivered', 'cancelled'],
+            ];
+            if (!in_array($actor['role'], ['admin', 'delivery'], true)
+                || !in_array($status, $transitions[$order['status']] ?? [], true)) {
+                throw new RuntimeException('That status change is not available for this order.');
+            }
+            if ($status === 'delivered' && !hash_equals((string) ($order['delivery_code'] ?? ''), $verificationCode)) {
+                throw new RuntimeException('Enter the six-digit verification code shared by the customer.');
+            }
+            if ($status === 'cancelled') {
+                $reason = trim($note);
+                if ($reason === '' || mb_strlen($reason) > 500) {
+                    throw new RuntimeException('Enter a reason for cancellation between 1 and 500 characters.');
+                }
+                $order['cancellation_reason'] = $reason;
+                foreach ($order['lines'] as $line) {
+                    $productIndex = $this->findIndex($data['products'], (int) $line['product_id']);
+                    if ($productIndex !== null) {
+                        $data['products'][$productIndex]['stock'] += $line['quantity'];
+                        $data['inventory_movements'][] = ['id' => $this->nextId($data['inventory_movements']),
+                            'product_id' => $line['product_id'], 'type' => 'cancellation',
+                            'quantity_delta' => $line['quantity'], 'note' => 'Cancelled ' . $order['number'],
+                            'created_by' => $actor['name'], 'created_at' => date('Y-m-d H:i:s')];
+                    }
+                }
+                if ($order['payment_status'] === 'paid') {
+                    $order['payment_status'] = 'refunded';
+                }
             }
             $order['status'] = $status;
             $order['updated_at'] = date('Y-m-d H:i:s');
@@ -310,7 +479,30 @@ final class Store
     public function saveProduct(array $attributes): array
     {
         return $this->write(function (array &$data) use ($attributes): array {
+            foreach (['name', 'sku', 'brand', 'description'] as $field) {
+                if (trim((string) ($attributes[$field] ?? '')) === '') {
+                    throw new RuntimeException('Complete every product field before saving.');
+                }
+            }
+            foreach (['price', 'cost', 'stock', 'min_stock'] as $field) {
+                $value = $attributes[$field] ?? null;
+                if (!is_numeric($value) || !is_finite((float) $value) || (float) $value < ($field === 'min_stock' ? 1 : 0)
+                    || (in_array($field, ['stock', 'min_stock'], true) && (float) $value != (int) $value)) {
+                    throw new RuntimeException('Enter valid non-negative prices and whole stock quantities.');
+                }
+            }
+            if (!$this->findById($data['categories'], (int) ($attributes['category_id'] ?? 0))) {
+                throw new RuntimeException('Choose a valid product category.');
+            }
+            if (!empty($attributes['restock_date'])) {
+                $this->validateDate((string) $attributes['restock_date']);
+            }
             $id = (int) ($attributes['id'] ?? 0);
+            $existingProduct = $id ? $this->findById($data['products'], $id) : null;
+            $imagePath = array_key_exists('image_path', $attributes) ? $attributes['image_path'] : ($existingProduct['image_path'] ?? null);
+            if ($imagePath !== null && (!is_string($imagePath) || !ImageUploads::isValidName($imagePath))) {
+                throw new RuntimeException('Choose a valid uploaded product photo.');
+            }
             $product = [
                 'id' => $id ?: $this->nextId($data['products']),
                 'sku' => mb_strtoupper(trim((string) $attributes['sku'])),
@@ -323,7 +515,8 @@ final class Store
                 'stock' => max(0, (int) $attributes['stock']),
                 'min_stock' => max(1, (int) $attributes['min_stock']),
                 'restock_date' => trim((string) ($attributes['restock_date'] ?? '')) ?: null,
-                'visual' => in_array($attributes['visual'] ?? '', ['⚽', '🏏', '🏀', '🏸', '🎾', '🏃', '🧘', '🏋️', '🥊', '🚴'], true) ? $attributes['visual'] : '⚽',
+                'visual' => in_array($attributes['visual'] ?? '', ['⚽', '🏏', '🏀', '🏸', '🎾', '🏃', '🧘', '🏋️', '🥊', '🚴', '🥅'], true) ? $attributes['visual'] : '⚽',
+                'image_path' => $imagePath,
                 'featured' => isset($attributes['featured']),
                 'is_active' => true,
             ];
@@ -339,9 +532,16 @@ final class Store
                 if ($index === null) {
                     throw new RuntimeException('Product not found.');
                 }
+                $delta = $product['stock'] - $data['products'][$index]['stock'];
                 $data['products'][$index] = $product;
             } else {
+                $delta = $product['stock'];
                 $data['products'][] = $product;
+            }
+            if ($delta !== 0) {
+                $data['inventory_movements'][] = ['id' => $this->nextId($data['inventory_movements']),
+                    'product_id' => $product['id'], 'type' => 'adjustment', 'quantity_delta' => $delta,
+                    'note' => 'Product editor stock update', 'created_at' => date('Y-m-d H:i:s')];
             }
             return $product;
         });
@@ -378,9 +578,14 @@ final class Store
     public function addExpense(array $attributes, array $actor): array
     {
         return $this->write(function (array &$data) use ($attributes, $actor): array {
+            $this->requireAdmin($data, $actor);
+            $this->validateDate((string) ($attributes['date'] ?? date('Y-m-d')));
+            if (!is_numeric($attributes['amount'] ?? null) || !is_finite((float) $attributes['amount']) || round((float) $attributes['amount'], 2) <= 0) {
+                throw new RuntimeException('Enter an expense amount greater than zero.');
+            }
             $expense = [
                 'id' => $this->nextId($data['expenses']),
-                'date' => $attributes['date'] ?: date('Y-m-d'),
+                'date' => $attributes['date'] ?? date('Y-m-d'),
                 'category' => trim($attributes['category']) ?: 'Operations',
                 'description' => trim($attributes['description']) ?: 'Store operating expense',
                 'amount' => round((float) $attributes['amount'], 2),
@@ -390,6 +595,51 @@ final class Store
             $data['expenses'][] = $expense;
             return $expense;
         });
+    }
+
+    public function updateProfileImage(array $actor, ?string $image): array
+    {
+        if ($image !== null && !ImageUploads::isValidName($image)) {
+            throw new RuntimeException('Choose a valid uploaded profile photo.');
+        }
+        return $this->write(function (array &$data) use ($actor, $image): array {
+            // Always target the signed-in actor; there is no arbitrary target user parameter.
+            $index = $this->findIndex($data['users'], (int) $actor['id']);
+            if ($index === null || !$data['users'][$index]['is_active']) {
+                throw new RuntimeException('Your account is unavailable.');
+            }
+            $data['users'][$index]['profile_image'] = $image;
+            return $data['users'][$index];
+        });
+    }
+
+    public function addIncome(array $attributes, array $actor): array
+    {
+        return $this->write(function (array &$data) use ($attributes, $actor): array {
+            $this->requireAdmin($data, $actor);
+            $this->validateDate((string) ($attributes['date'] ?? ''));
+            if (!is_numeric($attributes['amount'] ?? null) || !is_finite((float) $attributes['amount'])
+                || round((float) $attributes['amount'], 2) <= 0
+                || trim((string) ($attributes['category'] ?? '')) === ''
+                || trim((string) ($attributes['description'] ?? '')) === '') {
+                throw new RuntimeException('Enter an income category, description, and amount greater than zero.');
+            }
+            $data['incomes'] ??= [];
+            $income = ['id' => $this->nextId($data['incomes']), 'date' => $attributes['date'],
+                'category' => trim($attributes['category']), 'description' => trim($attributes['description']),
+                'amount' => round((float) $attributes['amount'], 2), 'recorded_by' => $actor['name'],
+                'created_at' => date('Y-m-d H:i:s')];
+            $data['incomes'][] = $income;
+            return $income;
+        });
+    }
+
+    public function incomes(): array
+    {
+        $data = $this->read();
+        $incomes = $data['incomes'] ?? [];
+        usort($incomes, static fn(array $a, array $b): int => strcmp($b['date'], $a['date']) ?: ($b['id'] <=> $a['id']));
+        return $incomes;
     }
 
     public function expenses(): array
@@ -403,8 +653,8 @@ final class Store
     public function notifications(?int $userId, int $limit = 8): array
     {
         $data = $this->read();
-        $notifications = array_filter($data['notifications'], static fn(array $notification): bool => $notification['user_id'] === null || (int) $notification['user_id'] === $userId);
-        usort($notifications, static fn(array $a, array $b): int => strcmp($b['created_at'], $a['created_at']));
+        $notifications = array_filter($data['notifications'], static fn(array $notification): bool => $userId === null ? $notification['user_id'] === null : (int) ($notification['user_id'] ?? 0) === $userId);
+        usort($notifications, static fn(array $a, array $b): int => strcmp($b['created_at'], $a['created_at']) ?: ((int) $b['id'] <=> (int) $a['id']));
         return array_slice(array_values($notifications), 0, $limit);
     }
 
@@ -418,6 +668,13 @@ final class Store
         $monthOrders = array_filter($eligible, static fn(array $order): bool => str_starts_with($order['created_at'], $month));
         $dailyRevenue = array_sum(array_column($todayOrders, 'grand_total'));
         $monthlyRevenue = array_sum(array_column($monthOrders, 'grand_total'));
+        $monthlyNetSales = array_sum(array_map(static fn(array $order): float => (float) ($order['subtotal'] - $order['discount']), $monthOrders));
+        $weeklyRevenue = [];
+        for ($days = 6; $days >= 0; $days--) {
+            $day = date('Y-m-d', strtotime('-' . $days . ' days'));
+            $weeklyRevenue[] = ['label' => date('D', strtotime($day)), 'date' => $day,
+                'total' => array_sum(array_column(array_filter($eligible, static fn(array $order): bool => str_starts_with($order['created_at'], $day)), 'grand_total'))];
+        }
         $monthlyCost = 0.0;
         $salesByProduct = [];
         foreach ($monthOrders as $order) {
@@ -428,6 +685,7 @@ final class Store
             }
         }
         $monthlyExpenses = array_sum(array_map(static fn(array $expense): float => str_starts_with($expense['date'], $month) ? (float) $expense['amount'] : 0.0, $data['expenses']));
+        $monthlyIncome = array_sum(array_map(static fn(array $income): float => str_starts_with($income['date'], $month) ? (float) $income['amount'] : 0.0, $data['incomes'] ?? []));
         arsort($salesByProduct);
         $lowStock = array_values(array_filter($data['products'], static fn(array $product): bool => $product['stock'] < $product['min_stock']));
         return [
@@ -436,11 +694,22 @@ final class Store
             'month_revenue' => $monthlyRevenue,
             'month_cost' => $monthlyCost,
             'month_expenses' => $monthlyExpenses,
-            'month_profit' => $monthlyRevenue - $monthlyCost - $monthlyExpenses,
+            'month_income' => $monthlyIncome,
+            'month_profit' => $monthlyNetSales + $monthlyIncome - $monthlyCost - $monthlyExpenses,
+            'month_net_sales' => $monthlyNetSales,
+            'weekly_revenue' => $weeklyRevenue,
             'low_stock' => $lowStock,
             'top_products' => array_slice($salesByProduct, 0, 5, true),
             'orders' => $eligible,
         ];
+    }
+
+    private function validateDate(string $value): void
+    {
+        $date = DateTimeImmutable::createFromFormat('!Y-m-d', $value);
+        if (!$date || $date->format('Y-m-d') !== $value) {
+            throw new RuntimeException('Enter a valid date in YYYY-MM-DD format.');
+        }
     }
 
     private function buildCart(array $data, array $cart): array
@@ -528,25 +797,44 @@ final class Store
 
     private function access(bool $write, callable $callback): mixed
     {
-        $handle = fopen($this->path, 'c+');
-        // Use one exclusive lock for the short JSON transaction. On Windows,
-        // seeding an empty file while holding a shared lock is rejected.
-        if ($handle === false || !flock($handle, LOCK_EX)) {
+        // A separate lock remains stable while the data file is atomically replaced.
+        $handle = fopen($this->path . '.lock', 'c+');
+        if ($handle === false) {
             throw new RuntimeException('The local data store is temporarily unavailable.');
         }
+        if (!flock($handle, LOCK_EX)) {
+            fclose($handle);
+            throw new RuntimeException('The local data store is temporarily unavailable.');
+        }
+        $temporary = null;
         try {
-            rewind($handle);
-            $raw = stream_get_contents($handle);
+            $raw = is_file($this->path) ? file_get_contents($this->path) : '';
+            if ($raw === false) {
+                throw new RuntimeException('Unable to read the local data store.');
+            }
             $data = $raw === '' ? $this->seed() : json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
+            $migrated = false;
+            foreach ($data['orders'] as &$order) {
+                if (!isset($order['delivery_code'])) {
+                    $order['delivery_code'] = (string) random_int(100000, 999999);
+                    $migrated = true;
+                }
+            }
+            unset($order);
             $result = $callback($data);
-            if ($write || $raw === '') {
-                rewind($handle);
-                ftruncate($handle, 0);
-                fwrite($handle, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR));
-                fflush($handle);
+            if ($write || $raw === '' || $migrated) {
+                $encoded = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+                $temporary = tempnam(dirname($this->path), '.sg-');
+                if ($temporary === false || file_put_contents($temporary, $encoded) !== strlen($encoded)
+                    || !rename($temporary, $this->path)) {
+                    throw new RuntimeException('Unable to save store data. Check available disk space.');
+                }
             }
             return $result;
         } finally {
+            if (is_string($temporary) && is_file($temporary)) {
+                unlink($temporary);
+            }
             flock($handle, LOCK_UN);
             fclose($handle);
         }
@@ -624,6 +912,7 @@ final class Store
                     'created_at' => date('Y-m-d H:i:s', strtotime('today 08:45')), 'updated_at' => date('Y-m-d H:i:s', strtotime('today 10:20')),
                 ],
             ],
+            'incomes' => [],
             'expenses' => [
                 ['id' => 1, 'date' => date('Y-m-d', strtotime('first day of this month')), 'category' => 'Store operations', 'description' => 'Monthly hosting and utilities', 'amount' => 2400, 'recorded_by' => 'Aarav Mehta', 'created_at' => $now],
                 ['id' => 2, 'date' => date('Y-m-d', strtotime('-3 days')), 'category' => 'Delivery', 'description' => 'Local delivery fuel allowance', 'amount' => 680, 'recorded_by' => 'Aarav Mehta', 'created_at' => $now],

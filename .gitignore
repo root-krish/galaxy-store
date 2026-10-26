@@ -3,3 +3,8 @@
 /storage/*.log
 .DS_Store
 Thumbs.db
+
+/storage/.sg-*
+__pycache__/
+
+/storage/uploads/

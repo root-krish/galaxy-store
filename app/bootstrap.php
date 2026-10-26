@@ -44,12 +44,51 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
 
+header('X-Content-Type-Options: nosniff');
+header('Referrer-Policy: same-origin');
+header('Cache-Control: no-store');
+
+require_once __DIR__ . '/ImageUploads.php';
+require_once __DIR__ . '/Branding.php';
 require_once __DIR__ . '/Store.php';
+
+function shop_settings(): array
+{
+    static $settings = null;
+    return $settings ??= store()->settings();
+}
+
+function shop_name(): string
+{
+    return shop_settings()['shop_name'];
+}
+
+function image_uploads(): ImageUploads
+{
+    static $uploads = null;
+    return $uploads ??= new ImageUploads(getenv('SG_UPLOAD_PATH') ?: SG_ROOT . '/storage/uploads');
+}
+
+function can_shop(array $user): bool
+{
+    return in_array($user['role'], ['customer', 'delivery'], true);
+}
+
+function require_shopper(): array
+{
+    $user = require_login();
+    if (!can_shop($user)) {
+        flash('error', 'Please use a customer or delivery partner account to place an order.');
+        redirect('home');
+    }
+    return $user;
+}
+
 
 function store(): Store
 {
     static $store = null;
-    return $store ??= new Store(SG_ROOT . '/storage/data.json');
+    return $store ??= new Store(getenv('SG_DATA_PATH') ?: SG_ROOT . '/storage/data.json');
 }
 
 function h(mixed $value): string
@@ -84,7 +123,8 @@ function csrf_field(): string
 
 function verify_csrf(): void
 {
-    if (!hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'] ?? '')) {
+    $token = $_POST['csrf_token'] ?? null;
+    if (!is_string($token) || empty($_SESSION['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $token)) {
         http_response_code(419);
         exit('Your form session expired. Please refresh the page and try again.');
     }
@@ -105,7 +145,8 @@ function pull_flashes(): array
 function current_user(): ?array
 {
     $id = (int) ($_SESSION['user_id'] ?? 0);
-    return $id ? store()->user($id) : null;
+    $user = $id ? store()->user($id) : null;
+    return $user && $user['is_active'] ? $user : null;
 }
 
 function login_user(array $user): void
