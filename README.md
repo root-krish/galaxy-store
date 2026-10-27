@@ -24,7 +24,7 @@ The application creates its local data file and lock on first use. The PHP proce
 | Admin | admin@sportsgalaxy.local | Admin@123 |
 | Delivery | delivery@sportsgalaxy.local | Delivery@123 |
 
-The sign-in screen has buttons to fill these credentials. New registrations always create customer accounts.
+Open **Sign in** and enter the email (user ID) and password from this table manually. Demo credentials and login shortcuts are not displayed on the website. The accounts work only while an administrator has enabled **Demo access** in Store settings. New registrations always create customer accounts.
 
 ## Customer journey
 

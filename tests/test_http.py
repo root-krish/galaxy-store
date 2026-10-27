@@ -1,6 +1,7 @@
 """Isolated HTTP journey tests using only Python's standard library and PHP."""
 import base64
 import http.cookiejar
+import hashlib
 import json
 import os
 import re
@@ -83,6 +84,14 @@ with tempfile.TemporaryDirectory(prefix='galaxy-http-') as directory:
             guest = Client(base)
             check(guest.request(data={'action': 'logout'})[0] == 419, 'Fresh session cannot POST without CSRF')
             guest.request()
+            _, login_markup, _ = guest.request('/login')
+            check('data-demo-login' not in login_markup and 'data-password' not in login_markup, 'Login has no demo shortcuts or embedded passwords')
+            for asset in ['assets/css/app.css', 'assets/js/app.js']:
+                version = hashlib.sha256((ROOT / asset).read_bytes()).hexdigest()[:12]
+                check('/' + asset + '?v=' + version in login_markup, 'Asset URL tracks deployed content: ' + asset)
+                check(guest.request('/' + asset + '?v=' + version)[0] == 200, 'Versioned asset is served: ' + asset)
+            for credential in ['customer@sportsgalaxy.local', 'admin@sportsgalaxy.local', 'delivery@sportsgalaxy.local', 'Customer@123', 'Admin@123', 'Delivery@123']:
+                check(credential not in login_markup, 'Demo credential is documented outside the public login page')
             check(guest.request(data={'action': 'logout', 'csrf_token': 'wrong'})[0] == 419, 'Incorrect CSRF blocked')
             for private in ['/storage/data.json', '/app/Store.php', '/database/seed.sql', '/tests/http.py', '/.git/config', '/assets/../../storage/data.json']:
                 check(guest.request(private)[0] == 404, 'Private files blocked: '+private)
@@ -415,14 +424,26 @@ with tempfile.TemporaryDirectory(prefix='galaxy-http-') as directory:
             check(json.loads(data_path.read_text())['settings'].get('demo_access', '1') == '1', 'Customers cannot switch demo access')
             manager.post(action='set_demo_access', demo_access='0', return_page='admin', return_tab='settings')
             check('data-demo-login' not in Client(base).request('/login')[1], 'Disabled demo credentials are not exposed')
+            probe = Client(base)
+            check('/login' in probe.login('admin', 'Admin@123')[2], 'Disabled seeded administrator cannot sign in manually')
             check('/login' in admin.request('/admin')[2], 'Existing seeded administrator session revoked')
             check('/admin' in manager.request('/admin')[2], 'Personal administrator remains available')
             manager.post(action='reset_branding')
-            check('data-demo-login' not in Client(base).request('/login')[1], 'Reset preserves disabled demo access')
+            check('/login' in Client(base).login('admin', 'Admin@123')[2], 'Reset preserves disabled demo account access')
             manager.post(action='set_demo_access', demo_access='1', return_page='admin', return_tab='settings')
-            check('data-demo-login' in Client(base).request('/login')[1], 'Admin can turn demo access on again')
+            check('data-demo-login' not in Client(base).request('/login')[1], 'Enabling demo access does not expose credentials')
+            # This journey changed the seeded customer's email in the profile checks above.
+            demo_accounts = [('admin@sportsgalaxy.local', 'Admin@123', '/admin'), ('updated.customer@example.com', 'Customer@123', '/account')]
+            for email, password, destination in demo_accounts:
+                probe = Client(base)
+                probe.request('/login')
+                check(destination in probe.post(action='login', email=email, password=password)[2], 'Enabled demo account can sign in manually: ' + destination)
+            check('/login' in Client(base).login('delivery', 'Delivery@123')[2], 'Enabling demo access does not reactivate the deleted delivery account')
             manager.post(action='set_demo_access', demo_access='0', return_page='admin', return_tab='settings')
-            check('data-demo-login' not in Client(base).request('/login')[1], 'Admin can turn demo access off again')
+            for email, password, destination in demo_accounts:
+                probe = Client(base)
+                probe.request('/login')
+                check('/login' in probe.post(action='login', email=email, password=password)[2], 'Admin can disable manual demo sign-in again: ' + destination)
             print(f'Passed {checks} HTTP checks.')
         finally:
             server.terminate()

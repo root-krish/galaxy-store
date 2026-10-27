@@ -16,7 +16,7 @@ function render_header(string $title, string $page): void
     <meta property="og:type" content="<?= $page === 'product' ? 'product' : 'website' ?>">
     <meta property="og:image" content="<?= h(rtrim(getenv('SG_PUBLIC_URL') ?: 'http://localhost:8000', '/') . (!empty($GLOBALS['og_image']) ? $GLOBALS['og_image'] : '/assets/images/gear.svg')) ?>">
     <title><?= h($title) ?> · <?= h(shop_name()) ?></title>
-    <link rel="stylesheet" href="/assets/css/app.css">
+    <link rel="stylesheet" href="/assets/css/app.css?v=<?= h(substr(hash_file('sha256', SG_ROOT . '/assets/css/app.css'), 0, 12)) ?>">
     <style data-store-theme>:root {<?php foreach (Branding::cssVariables(shop_settings()) as $key => $value): ?><?= h($key) ?>:<?= h($value) ?>;<?php endforeach; ?>}</style>
 </head>
 <body class="cards-<?= h(shop_settings()['card_style']) ?> catalogue-cols-<?= h(shop_settings()['catalogue_columns']) ?>">
@@ -121,7 +121,7 @@ function render_footer(): void
     </footer>
 </div>
 <dialog id="cart-drawer" aria-labelledby="cart-heading"><button type="button" data-close-cart aria-label="Close cart">×</button><h2 id="cart-heading">Your cart</h2><div data-cart-content aria-live="polite"></div><a class="button" href="/cart">Edit cart</a><a class="button button-primary" href="/checkout">Checkout</a></dialog>
-<script src="/assets/js/app.js"></script>
+<script src="/assets/js/app.js?v=<?= h(substr(hash_file('sha256', SG_ROOT . '/assets/js/app.js'), 0, 12)) ?>"></script>
 </body>
 </html>
 <?php
@@ -473,10 +473,6 @@ function render_login_page(): void
                     <button class="button button-primary button-full" type="submit">Sign in <span>→</span></button>
                 </form>
                 <p class="auth-switch">New to <?= h(shop_name()) ?>? <a href="<?= h(url('register')) ?>">Create an account</a></p>
-                <?php if (shop_settings()['demo_access'] === '1'): ?><div class="demo-accounts">
-                    <p><span>◌</span> Demo access</p>
-                    <div><button type="button" data-demo-login data-email="customer@sportsgalaxy.local" data-password="Customer@123">Customer</button><button type="button" data-demo-login data-email="admin@sportsgalaxy.local" data-password="Admin@123">Admin</button><button type="button" data-demo-login data-email="delivery@sportsgalaxy.local" data-password="Delivery@123">Delivery</button></div>
-                </div><?php endif; ?>
             </div>
         </div>
     </section>

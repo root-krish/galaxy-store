@@ -100,7 +100,8 @@ try {
   };
   const login = async role => {
     await navigate('?page=login');
-    await evaluate('document.querySelector("[data-demo-login][data-email=\\"' + role + '@sportsgalaxy.local\\"]").click()');
+    await fill('.auth-form [name=email]', role + '@sportsgalaxy.local');
+    await fill('.auth-form [name=password]', {admin: 'Admin@123', customer: 'Customer@123', delivery: 'Delivery@123'}[role]);
     await submit('.auth-form');
   };
   await send('Page.enable');

@@ -93,20 +93,6 @@
     });
   }
 
-  document.querySelectorAll('[data-demo-login]').forEach((button) => {
-    button.addEventListener('click', () => {
-      const form = button.closest('.auth-form-wrap')?.querySelector('form');
-      if (!form) return;
-      const email = form.querySelector('[name="email"]');
-      const password = form.querySelector('[name="password"]');
-      if (email && password) {
-        email.value = button.dataset.email || '';
-        password.value = button.dataset.password || '';
-        email.focus();
-      }
-    });
-  });
-
   document.querySelectorAll('[data-order-action-form]').forEach((form) => {
     const select = form.querySelector('[data-order-status]');
     const label = form.querySelector('[data-cancel-reason]');
