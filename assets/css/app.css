@@ -268,8 +268,39 @@ main { min-height: 65vh; overflow: hidden; }
   .photo-settings-form { padding: 16px; }
 }
 
-.delivery-products > span { display: inline-flex; align-items: center; gap: 5px; }
-.delivery-products .product-photo { width: 24px; height: 24px; flex: 0 0 24px; }
+.delivery-products > span { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%; overflow-wrap: anywhere; font-size: 11px; }
+.delivery-products .product-photo, .delivery-products .product-illustration { width: 24px; height: 24px; flex: 0 0 24px; }
+.delivery-products b { flex-shrink: 0; }
+.delivery-layout { align-items: start; }
+.delivery-layout > *, .delivery-order-head > div { min-width: 0; }
+.delivery-side-card, .delivery-address > div { min-width: 0; overflow-wrap: anywhere; }
+.delivery-content-head, .delivery-order-head, .delivery-card-actions { flex-wrap: wrap; }
+.delivery-content-head .live-indicator { flex-shrink: 0; white-space: nowrap; }
+.delivery-update-form { min-width: 0; max-width: 100%; }
+.delivery-update-form input:not([type=hidden]) { flex: 1 1 210px; width: 240px; min-width: 0; max-width: 100%; min-height: 40px; font-size: 13px; }
+.delivery-update-form input:focus-visible { outline: 3px solid var(--lime-deep); outline-offset: 2px; }
+.delivery-update-form .button { min-height: 40px; font-size: 12px; }
+@media (max-width: 820px) {
+  .delivery-side-card {
+    grid-template-columns: 47px minmax(0, 1fr) repeat(2, minmax(90px, auto));
+    grid-template-areas: "avatar name assigned completed" "avatar role assigned completed";
+  }
+  .delivery-avatar { grid-area: avatar; }
+  .delivery-side-card > strong { grid-area: name; }
+  .delivery-side-card > small { grid-area: role; margin-top: 0; }
+  .delivery-metric { grid-area: assigned; }
+  .delivery-metric + .delivery-metric { grid-area: completed; }
+}
+@media (max-width: 570px) {
+  .delivery-side-card {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-areas: "avatar name name name" "avatar role role role" "assigned assigned completed completed";
+  }
+  .delivery-metric { margin-top: 8px; padding-top: 12px; border-top: 1px solid var(--line-dark); }
+  .delivery-content-head > div { flex: 1 1 240px; }
+  .delivery-update-form input:not([type=hidden]) { min-height: 44px; }
+  .delivery-update-form .button { width: 100%; min-height: 44px; }
+}
 .photo-controls label { display: grid; gap: 8px; }
 .photo-controls .checkbox-label { display: flex; }
 
