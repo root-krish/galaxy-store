@@ -18,10 +18,11 @@ if (($_GET['page'] ?? '') === 'media' && in_array($_SERVER['REQUEST_METHOD'], ['
 
 function post_return_page(string $fallback = 'home'): never
 {
-    $allowed = ['home', 'shop', 'cart', 'checkout', 'account', 'admin', 'delivery', 'login', 'register', 'profile'];
+    $allowed = ['home', 'shop', 'cart', 'checkout', 'account', 'admin', 'delivery', 'login', 'register', 'profile', 'product'];
     $page = (string) ($_POST['return_page'] ?? $fallback);
     $page = in_array($page, $allowed, true) ? $page : $fallback;
     $parameters = [];
+    if ($page === 'product') $parameters['id'] = (int) ($_POST['product_id'] ?? 0);
     if ($page === 'admin' && !empty($_POST['return_tab'])) {
         $parameters['tab'] = preg_replace('/[^a-z]/', '', (string) $_POST['return_tab']);
         if ($parameters['tab'] === 'finance') {

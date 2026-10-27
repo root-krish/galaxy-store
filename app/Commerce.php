@@ -36,7 +36,9 @@ trait Commerce
         $batch = $this->write(function (array &$data) use ($token): array {
             $batch = [];
             foreach ($data['notifications'] as &$notification) {
-                if (empty($notification['mail_to']) || !empty($notification['mail_sent_at']) || ($notification['mail_lease_until'] ?? 0) > time()) continue;
+                if (empty($notification['mail_to']) || !empty($notification['mail_sent_at'])
+                    || !empty($notification['mail_exhausted_at']) || (int) ($notification['mail_attempts'] ?? 0) >= 6
+                    || ($notification['mail_lease_until'] ?? 0) > time()) continue;
                 $notification['mail_lease'] = $token; $notification['mail_lease_until'] = time() + 900;
                 $batch[] = $notification;
                 if (count($batch) >= 20) break;
@@ -53,12 +55,21 @@ trait Commerce
                 if ($index === null || ($data['notifications'][$index]['mail_lease'] ?? '') !== $token) return;
                 $notification =& $data['notifications'][$index];
                 if ($success) { $notification['mail_sent_at'] = date('c'); unset($notification['mail_error']); }
-                else $notification['mail_error'] = 'Delivery failed; retry scheduled.';
-                $notification['mail_lease_until'] = $success ? 0 : time() + 300;
+                $notification['mail_lease_until'] = 0;
+                if (!$success) {
+                    $notification['mail_attempts'] = (int) ($notification['mail_attempts'] ?? 0) + 1;
+                    if ($notification['mail_attempts'] >= 6) {
+                        $notification['mail_exhausted_at'] = date('c');
+                        $notification['mail_error'] = 'Delivery failed; attempt limit exhausted.';
+                    } else {
+                        $notification['mail_error'] = 'Delivery failed; retry scheduled.';
+                        $notification['mail_lease_until'] = time() + min(3600, 300 * (2 ** ($notification['mail_attempts'] - 1)));
+                    }
+                }
                 unset($notification['mail_lease']);
             });
         }
-        if ($count !== count($batch)) throw new RuntimeException('Some messages failed; they remain queued for retry.');
+        if ($count !== count($batch)) throw new RuntimeException('Some messages failed; retries are scheduled unless the attempt limit is exhausted.');
         return $count;
     }
 }

@@ -473,7 +473,6 @@ final class Store
                 throw new RuntimeException('This order is already closed.');
             }
             if ($status !== 'cancelled' && $order['payment_method'] === 'razorpay' && $order['payment_status'] !== 'paid') throw new RuntimeException('Verify online payment before fulfillment.');
-            if ($status === 'cancelled' && $order['payment_method'] === 'razorpay' && $order['payment_status'] === 'pending' && !empty($order['payment_link_id'])) Payments::request('POST', 'payment_links/' . rawurlencode($order['payment_link_id']) . '/cancel');
             $transitions = [
                 'placed' => ['confirmed', 'packed', 'cancelled'],
                 'confirmed' => ['packed', 'cancelled'],
@@ -492,6 +491,15 @@ final class Store
                 $reason = trim($note);
                 if ($reason === '' || mb_strlen($reason) > 500) {
                     throw new RuntimeException('Enter a reason for cancellation between 1 and 500 characters.');
+                }
+                if ($order['payment_method'] === 'razorpay' && $order['payment_status'] === 'pending' && !empty($order['payment_link_id'])) {
+                    $linkPath = 'payment_links/' . rawurlencode($order['payment_link_id']);
+                    $link = Payments::request('GET', $linkPath);
+                    if (($link['status'] ?? '') === 'created') {
+                        Payments::request('POST', $linkPath . '/cancel');
+                    } elseif (!in_array($link['status'] ?? '', ['expired', 'cancelled'], true)) {
+                        throw new RuntimeException('Verify the payment link status before cancelling this order. Paid or partially paid links cannot be cancelled.');
+                    }
                 }
                 $order['cancellation_reason'] = $reason;
                 foreach ($order['lines'] as $line) {

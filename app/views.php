@@ -573,7 +573,8 @@ function render_account_page(array $user): void
 
 function render_invoice_page(array $order, bool $track = false): void
 {
-    if ($order['payment_method'] === 'razorpay' && $order['payment_status'] === 'pending') {
+    if ($order['payment_method'] === 'razorpay' && $order['payment_status'] === 'pending'
+        && $order['status'] !== 'cancelled' && (int) $order['user_id'] === (int) (current_user()['id'] ?? 0)) {
         echo '<section class="content-section"><h2>Online payment pending</h2><p>Complete payment, then check its status here. Your order ships after verification.</p>';
         foreach (['pay_order' => 'Pay securely with Razorpay', 'verify_payment' => 'Check payment status'] as $action => $label) echo '<form method="post">' . csrf_field() . '<input type="hidden" name="action" value="' . $action . '"><input type="hidden" name="order_id" value="' . (int) $order['id'] . '"><button class="button button-primary" type="submit">' . $label . '</button></form>';
         echo '</section>';
