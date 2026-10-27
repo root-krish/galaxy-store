@@ -16,7 +16,8 @@ function product_visual(array $product): string
     if (is_string($image) && ImageUploads::isValidName($image)) {
         return '<img class="product-photo" src="' . h(url('media', ['image' => $image])) . '" alt="' . h($product['name']) . '" loading="lazy">';
     }
-    return h($product['visual']);
+    $asset = equipment_asset((string) ($product['visual'] ?? ''));
+    return $asset ? '<img class="product-illustration" src="' . h($asset) . '" alt="' . h($product['name']) . '" loading="lazy">' : h($product['visual']);
 }
 
 function render_photo_input(string $field, string $label, bool $hasPhoto): void
@@ -195,4 +196,10 @@ function render_order_actions(array $order): void
     <?php elseif ($order['status'] === 'cancelled' && !empty($order['cancellation_reason'])): ?><p class="cancellation-reason"><?= h($order['cancellation_reason']) ?></p><?php endif; ?>
     </div>
     <?php
+}
+
+function equipment_asset(string $icon): ?string
+{
+    $name = ['⚽'=>'football','🏀'=>'basketball','🏏'=>'bat','🏃'=>'shoe','👟'=>'shoe','🏸'=>'racket','🎾'=>'racket','🏋️'=>'weights','🧘'=>'mat','🥊'=>'gloves','🥅'=>'gloves','🚴'=>'bottle','🔴'=>'ball','🏐'=>'football'][$icon] ?? null;
+    return $name ? '/assets/images/' . $name . '.svg' : null;
 }

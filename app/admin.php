@@ -11,7 +11,8 @@ function category_visual(array $category): string
     if (!empty($category['image_path']) && ImageUploads::isValidName($category['image_path'])) {
         return '<img src="' . h(url('media', ['image' => $category['image_path']])) . '" alt="" loading="lazy">';
     }
-    return h($category['icon']);
+    $asset = equipment_asset($category['icon']);
+    return $asset ? '<img class="product-illustration" src="' . h($asset) . '" alt="" loading="lazy">' : h($category['icon']);
 }
 
 function render_categories_admin(): void
@@ -84,7 +85,7 @@ function render_extended_settings(array $settings): void
         <label>Heading font<select name="heading_font"><?php foreach (['classic' => 'Classic serif', 'modern' => 'Modern sans serif', 'rounded' => 'Friendly sans serif'] as $value => $name): ?><option value="<?= h($value) ?>" <?= $settings['heading_font'] === $value ? 'selected' : '' ?>><?= h($name) ?></option><?php endforeach; ?></select></label>
         <label>Product card shape<select name="card_style"><option value="rounded" <?= $settings['card_style'] === 'rounded' ? 'selected' : '' ?>>Rounded corners</option><option value="square" <?= $settings['card_style'] === 'square' ? 'selected' : '' ?>>Square corners</option></select></label>
         <label>Products per row on desktop<select name="catalogue_columns"><?php foreach (['3', '4'] as $value): ?><option value="<?= h($value) ?>" <?= $settings['catalogue_columns'] === $value ? 'selected' : '' ?>><?= h($value) ?> columns</option><?php endforeach; ?></select></label>
-        <?php foreach (['show_benefits' => 'Show service benefits', 'show_story' => 'Show our story', 'show_quote' => 'Show sports quote'] as $key => $label): ?><input type="hidden" name="<?= h($key) ?>" value="0"><label class="checkbox-label"><input type="checkbox" name="<?= h($key) ?>" value="1" <?= $settings[$key] === '1' ? 'checked' : '' ?>><span><?= h($label) ?></span></label><?php endforeach; ?>
+        <?php foreach (['demo_access' => 'Enable demo account access (create a personal admin first)', 'show_categories' => 'Show categories', 'show_featured' => 'Show featured products', 'show_benefits' => 'Show service benefits', 'show_story' => 'Show our story', 'show_quote' => 'Show sports quote'] as $key => $label): ?><input type="hidden" name="<?= h($key) ?>" value="0"><label class="checkbox-label"><input type="checkbox" name="<?= h($key) ?>" value="1" <?= $settings[$key] === '1' ? 'checked' : '' ?>><span><?= h($label) ?></span></label><?php endforeach; ?>
     </fieldset>
     <fieldset class="settings-group"><legend>Public contact details</legend><label>Support email<input type="email" name="support_email" maxlength="190" value="<?= h($settings['support_email']) ?>"></label><label>Support phone<input type="tel" name="support_phone" maxlength="30" value="<?= h($settings['support_phone']) ?>"></label><p class="quiet-copy">These details appear in the footer. Leave blank to hide them.</p></fieldset>
     <?php
@@ -92,6 +93,7 @@ function render_extended_settings(array $settings): void
 
 function render_order_command(array $orders, array $partners): void
 {
+    echo '<form method="post">' . csrf_field() . '<input type="hidden" name="action" value="export_orders"><button class="button button-ghost" type="submit">Export orders (CSV / Excel)</button></form>';
     $search = trim((string) ($_GET['order_q'] ?? ''));
     $status = (string) ($_GET['order_status'] ?? 'all');
     $filters = ['all' => 'All orders', 'waiting' => 'To prepare', 'packed' => 'Ready to assign', 'assigned' => 'Assigned', 'out_for_delivery' => 'On the road', 'delivered' => 'Delivered', 'cancelled' => 'Cancelled'];

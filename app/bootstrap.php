@@ -35,6 +35,8 @@ if (!function_exists('mb_strlen')) {
 }
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
+    ini_set('session.use_strict_mode', '1');
+    ini_set('session.use_only_cookies', '1');
     session_name('sports_galaxy_session');
     session_set_cookie_params([
         'httponly' => true,
@@ -45,12 +47,18 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 }
 
 header('X-Content-Type-Options: nosniff');
+header('X-Frame-Options: DENY');
+header("Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
+header('Permissions-Policy: camera=(), microphone=(), geolocation=()');
+if (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') header('Strict-Transport-Security: max-age=31536000');
 header('Referrer-Policy: same-origin');
 header('Cache-Control: no-store');
 
 require_once __DIR__ . '/ImageUploads.php';
 require_once __DIR__ . '/Branding.php';
 require_once __DIR__ . '/AdminOperations.php';
+require_once __DIR__ . '/Payments.php';
+require_once __DIR__ . '/Commerce.php';
 require_once __DIR__ . '/Store.php';
 
 function shop_settings(): array
@@ -100,7 +108,13 @@ function h(mixed $value): string
 function url(string $page = 'home', array $parameters = []): string
 {
     $parameters = array_filter(['page' => $page] + $parameters, static fn(mixed $value): bool => $value !== null && $value !== '');
-    return '?' . http_build_query($parameters);
+    unset($parameters['page']);
+    $path = $page === 'home' ? '/' : '/' . rawurlencode($page);
+    if ($page === 'shop' && isset($parameters['category'])) {
+        foreach (store()->categories() as $category) if ((int) $category['id'] === (int) $parameters['category']) { $path .= '/' . slug($category['name']) . '-' . $category['id']; unset($parameters['category']); break; }
+    }
+    if ($page === 'product' && isset($parameters['id']) && ($product = store()->product((int) $parameters['id']))) { $path .= '/' . slug($product['name']) . '-' . $product['id']; unset($parameters['id']); }
+    return $path . ($parameters ? '?' . http_build_query($parameters) : '');
 }
 
 function redirect(string $page = 'home', array $parameters = []): never
@@ -147,7 +161,7 @@ function current_user(): ?array
 {
     $id = (int) ($_SESSION['user_id'] ?? 0);
     $user = $id ? store()->user($id) : null;
-    return $user && $user['is_active'] && empty($user['deleted_at'])
+    return $user && store()->accountAllowed($user) && $user['is_active'] && empty($user['deleted_at'])
         && (int) ($_SESSION['auth_version'] ?? 0) === (int) ($user['auth_version'] ?? 0) ? $user : null;
 }
 
@@ -240,3 +254,5 @@ function format_date(string $date, string $format = 'd M Y, h:i A'): string
 {
     return date($format, strtotime($date));
 }
+
+function slug(string $value): string { return trim(preg_replace('/[^a-z0-9]+/', '-', strtolower($value)), '-') ?: 'item'; }

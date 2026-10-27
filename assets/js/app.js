@@ -53,7 +53,7 @@
       let visible = 0;
 
       productCards.forEach((card) => {
-        const show = card.dataset.name?.includes(term);
+        const show = term.split(/\s+/).every(word => card.dataset.name?.includes(word));
         card.hidden = !show;
         if (show) visible += 1;
       });
@@ -181,6 +181,63 @@
         button.classList.add('is-submitting');
         window.setTimeout(() => button.classList.remove('is-submitting'), 1500);
       }
+    });
+  });
+})();
+
+(() => {
+  const input = document.querySelector('#header-search');
+  const suggestions = document.querySelector('#search-suggestions');
+  let timer, request;
+  input?.addEventListener('input', () => {
+    clearTimeout(timer); request?.abort(); suggestions.replaceChildren(); suggestions.hidden = true;
+    const query = input.value.trim();
+    if (!query) return;
+    timer = setTimeout(async () => {
+      request = new AbortController();
+      try {
+        const response = await fetch('/search?q=' + encodeURIComponent(query), { signal: request.signal });
+        const data = await response.json();
+        if (input.value.trim() !== query) return;
+        for (const item of data.items) {
+          const li = document.createElement('li'), link = document.createElement('a');
+          link.href = item.url; link.textContent = `${item.name} · ${item.price}`; li.append(link); suggestions.append(li);
+        }
+        if (!data.items.length) { const li = document.createElement('li'); li.textContent = 'No matching gear'; suggestions.append(li); }
+        suggestions.hidden = false;
+      } catch (_) { suggestions.hidden = true; }
+    }, 180);
+  });
+  input?.addEventListener('keydown', event => { if (event.key === 'Escape') suggestions.hidden = true; if (event.key === 'ArrowDown') { event.preventDefault(); suggestions.querySelector('a')?.focus(); } });
+  document.addEventListener('click', event => { if (!event.target.closest('.header-search')) suggestions.hidden = true; });
+  const drawer = document.querySelector('#cart-drawer');
+  document.querySelector('[data-close-cart]')?.addEventListener('click', () => drawer.close());
+  function displayCart(data) {
+    const content = drawer.querySelector('[data-cart-content]'); content.replaceChildren();
+    for (const item of data.items) { const line = document.createElement('p'); line.textContent = `${item.name} × ${item.quantity}`; content.append(line); }
+    const total = document.createElement('strong'); total.textContent = `Subtotal: ${data.subtotal}`; content.append(total);
+    document.querySelectorAll('.cart-count').forEach(el => { el.textContent = data.count; });
+    if (!drawer.open) drawer.showModal();
+  }
+  document.querySelector('.cart-link')?.addEventListener('click', async event => {
+    if (!drawer.showModal) return;
+    event.preventDefault();
+    try { const response = await fetch('/cart-data'); if (!response.ok) throw Error(); displayCart(await response.json()); }
+    catch (_) { window.location.href = '/cart'; }
+  });
+  document.querySelectorAll('form').forEach(form => {
+    const action = form.querySelector('[name="action"]')?.value;
+    if (!['add_to_cart', 'wishlist'].includes(action) || !drawer.showModal) return;
+    form.addEventListener('submit', async event => {
+      event.preventDefault(); const button = form.querySelector('button'); button.disabled = true;
+      try {
+        const response = await fetch(form.getAttribute('action') || window.location.href, { method: 'POST', body: new FormData(form), headers: { Accept: 'application/json' } });
+        if (!response.ok || response.redirected) throw Error('Please refresh and sign in again.');
+        const data = await response.json();
+        if (action === 'wishlist') { button.textContent = data.saved ? 'Saved to wishlist' : 'Add to wishlist'; button.setAttribute('aria-pressed', String(data.saved)); }
+        else displayCart(data);
+      } catch (error) { alert(error.message || 'Could not save. Please try again.'); }
+      finally { button.disabled = false; }
     });
   });
 })();

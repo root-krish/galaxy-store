@@ -8,6 +8,7 @@ declare(strict_types=1);
 final class Store
 {
     use AdminOperations;
+    use Commerce;
     public function __construct(private readonly string $path)
     {
         $directory = dirname($this->path);
@@ -37,7 +38,8 @@ final class Store
                 return true;
             }
             $haystack = mb_strtolower($product['name'] . ' ' . $product['brand'] . ' ' . $product['description'] . ' ' . $product['sku']);
-            return str_contains($haystack, $needle);
+            foreach (preg_split('/\s+/u', $needle) as $term) if (!str_contains($haystack, $term)) return false;
+            return true;
         });
 
         usort($products, static fn(array $a, array $b): int => ((int) $b['featured'] <=> (int) $a['featured']) ?: strcmp($a['name'], $b['name']));
@@ -58,15 +60,52 @@ final class Store
 
     public function authenticate(string $email, string $password): ?array
     {
-        $data = $this->read();
-        foreach ($data['users'] as $user) {
-            if (mb_strtolower($user['email']) === mb_strtolower(trim($email))
-                && $user['is_active']
-                && password_verify($password, $user['password_hash'])) {
-                return $user;
+        return $this->write(function (array &$data) use ($email, $password): ?array {
+            $now = time();
+            $limits = array_filter($data['settings']['login_limits'] ?? [], static fn(array $entry): bool => $entry['until'] > $now);
+            $keys = [hash('sha256', 'email:' . mb_strtolower(trim($email))), hash('sha256', 'ip:' . ($_SERVER['REMOTE_ADDR'] ?? 'cli'))];
+            foreach ($keys as $key) if (($limits[$key]['count'] ?? 0) >= 20) return null;
+            $matched = null;
+            foreach ($data['users'] as $user) {
+                if (mb_strtolower($user['email']) === mb_strtolower(trim($email)) && $user['is_active'] && $this->accountAllowed($user, $data)
+                    && password_verify($password, $user['password_hash'])) { $matched = $user; break; }
             }
-        }
-        return null;
+            foreach ($keys as $key) {
+                if ($matched) unset($limits[$key]);
+                else $limits[$key] = ['count' => ($limits[$key]['count'] ?? 0) + 1, 'until' => $limits[$key]['until'] ?? $now + 900];
+            }
+            $data['settings']['login_limits'] = array_slice($limits, -10000, null, true);
+            return $matched;
+        });
+    }
+
+    public function isDemoAccount(array $user): bool
+    {
+        return !empty($user['is_demo']) || (int) $user['id'] <= 3;
+    }
+
+    public function accountAllowed(array $user, ?array $data = null): bool
+    {
+        $data ??= $this->read();
+        return !$this->isDemoAccount($user) || ($data['settings']['demo_access'] ?? '1') === '1';
+    }
+
+    public function wishlist(int $userId): array
+    {
+        return $this->user($userId)['wishlist'] ?? [];
+    }
+
+    public function toggleWishlist(array $actor, int $productId): bool
+    {
+        return $this->write(function (array &$data) use ($actor, $productId): bool {
+            $index = $this->findIndex($data['users'], (int) $actor['id']);
+            $product = $this->findById($data['products'], $productId);
+            if ($index === null || !$data['users'][$index]['is_active'] || !$this->accountAllowed($data['users'][$index], $data) || !$product || !$product['is_active']) throw new RuntimeException('Item or account unavailable.');
+            $list = $data['users'][$index]['wishlist'] ?? [];
+            $saved = !in_array($productId, $list, true);
+            $data['users'][$index]['wishlist'] = $saved ? [...$list, $productId] : array_values(array_diff($list, [$productId]));
+            return $saved;
+        });
     }
 
     public function register(array $attributes): array
@@ -181,6 +220,12 @@ final class Store
             $this->requireAdmin($data, $actor);
             $current = array_replace(Branding::DEFAULTS, $data['settings']);
             $branding = Branding::validate(array_replace($current, array_intersect_key($attributes, Branding::DEFAULTS)));
+            if ($branding['demo_access'] === '0' && $current['demo_access'] !== '0') {
+                $safeAdmins = array_filter($data['users'], fn(array $u): bool => $u['role'] === 'admin' && $u['is_active'] && !$this->isDemoAccount($u));
+                if (!$safeAdmins) throw new RuntimeException('Create a personal administrator account before disabling demo access.');
+                foreach ($data['users'] as &$u) if ($this->isDemoAccount($u)) $u['auth_version'] = (int) ($u['auth_version'] ?? 0) + 1;
+                unset($u);
+            }
             $data['settings'] = array_replace($data['settings'], $branding);
             return $branding;
         });
@@ -190,7 +235,8 @@ final class Store
     {
         $this->write(function (array &$data) use ($actor): void {
             $this->requireAdmin($data, $actor);
-            $data['settings'] = array_replace($data['settings'], Branding::DEFAULTS);
+            $demo = $data['settings']['demo_access'] ?? '1';
+            $data['settings'] = array_replace($data['settings'], Branding::DEFAULTS, ['demo_access' => $demo]);
         });
     }
 
@@ -292,7 +338,9 @@ final class Store
                 'city' => trim((string) $checkout['city']),
                 'postal_code' => trim((string) $checkout['postal_code']),
             ];
-            $paymentMethod = in_array($checkout['payment_method'] ?? 'cod', ['cod', 'upi', 'card'], true) ? $checkout['payment_method'] : 'cod';
+            $paymentMethod = in_array($checkout['payment_method'] ?? 'cod', ['cod', 'upi', 'card', 'razorpay'], true) ? ($checkout['payment_method'] ?? 'cod') : 'cod';
+            if (in_array($paymentMethod, ['upi', 'card'], true) && ($data['settings']['demo_access'] ?? '1') !== '1') throw new RuntimeException('Demo payments are disabled.');
+            if ($paymentMethod === 'razorpay' && !Payments::configured()) throw new RuntimeException('Online payments are not configured.');
             $now = date('Y-m-d H:i:s');
             $order = [
                 'id' => $orderId,
@@ -312,7 +360,7 @@ final class Store
                 'shipping' => $shipping,
                 'grand_total' => $grandTotal,
                 'payment_method' => $paymentMethod,
-                'payment_status' => $paymentMethod === 'cod' ? 'pending' : 'paid',
+                'payment_status' => in_array($paymentMethod, ['cod', 'razorpay'], true) ? 'pending' : 'paid',
                 'status' => 'placed',
                 'cancellation_reason' => null,
                 'delivery_partner_id' => null,
@@ -326,7 +374,7 @@ final class Store
                 'updated_at' => $now,
             ];
             $data['orders'][] = $order;
-            $this->notify($data, $user['id'], 'order', 'Order ' . $order['number'] . ' confirmed', 'We received your order. Track it with ' . $order['tracking_code'] . '.');
+            $this->notify($data, $user['id'], 'order', 'Order ' . $order['number'] . ' confirmed', 'Order receipt: INR ' . $order['grand_total'] . '. Payment: ' . $order['payment_status'] . '. Items: ' . implode(', ', array_map(static fn(array $line): string => $line['name'] . ' x ' . $line['quantity'], $lines)) . '. Track it with ' . $order['tracking_code'] . '.');
             $this->notify($data, null, 'new_order', 'New order ' . $order['number'], $user['name'] . ' placed an order for ₹' . number_format($grandTotal, 2) . '.');
             return $order;
         });
@@ -376,6 +424,7 @@ final class Store
                 throw new RuntimeException('The order or delivery partner could not be found.');
             }
             $order =& $data['orders'][$orderIndex];
+            if ($order['payment_method'] === 'razorpay' && $order['payment_status'] !== 'paid') throw new RuntimeException('Verify online payment before fulfillment.');
             if (!in_array($order['status'], ['placed', 'confirmed', 'packed', 'assigned'], true)) {
                 throw new RuntimeException('Only open orders awaiting dispatch can be assigned.');
             }
@@ -422,6 +471,8 @@ final class Store
             if ($order['status'] === 'delivered' || $order['status'] === 'cancelled') {
                 throw new RuntimeException('This order is already closed.');
             }
+            if ($status !== 'cancelled' && $order['payment_method'] === 'razorpay' && $order['payment_status'] !== 'paid') throw new RuntimeException('Verify online payment before fulfillment.');
+            if ($status === 'cancelled' && $order['payment_method'] === 'razorpay' && $order['payment_status'] === 'pending' && !empty($order['payment_link_id'])) Payments::request('POST', 'payment_links/' . rawurlencode($order['payment_link_id']) . '/cancel');
             $transitions = [
                 'placed' => ['confirmed', 'packed', 'cancelled'],
                 'confirmed' => ['packed', 'cancelled'],
@@ -453,7 +504,7 @@ final class Store
                     }
                 }
                 if ($order['payment_status'] === 'paid') {
-                    $order['payment_status'] = 'refunded';
+                    $order['payment_status'] = $order['payment_method'] === 'razorpay' ? 'refund_pending' : 'refunded';
                 }
             }
             $order['status'] = $status;
@@ -468,6 +519,7 @@ final class Store
                 'actor' => $actor['name'],
             ];
             $this->notify($data, $order['user_id'], 'order', 'Order ' . $order['number'] . ' is ' . str_replace('_', ' ', $status), end($order['delivery_events'])['note']);
+            $this->notify($data, null, 'order', 'Order ' . $order['number'] . ' is ' . str_replace('_', ' ', $status), end($order['delivery_events'])['note']);
             return $order;
         });
     }
@@ -734,6 +786,7 @@ final class Store
         $data['notifications'][] = [
             'id' => $this->nextId($data['notifications']),
             'user_id' => $userId,
+            'mail_to' => $userId ? ($this->findById($data['users'], $userId)['email'] ?? '') : (getenv('SG_ADMIN_EMAIL') ?: ''),
             'type' => $type,
             'title' => $title,
             'body' => $body,
@@ -793,6 +846,10 @@ final class Store
 
     private function access(bool $write, callable $callback): mixed
     {
+        if (getenv('SG_DB_DSN')) {
+            require_once __DIR__ . '/PdoRepository.php';
+            return (new PdoRepository())->access($write, $callback);
+        }
         // A separate lock remains stable while the data file is atomically replaced.
         $handle = fopen($this->path . '.lock', 'c+');
         if ($handle === false) {

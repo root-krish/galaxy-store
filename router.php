@@ -13,5 +13,6 @@ if ($file && str_starts_with($file, $assets) && is_file($file)
     && in_array(strtolower(pathinfo($file, PATHINFO_EXTENSION)), ['css', 'js', 'png', 'jpg', 'jpeg', 'svg', 'webp', 'ico', 'woff2'], true)) {
     return false;
 }
+if (preg_match('#^/(?:shop|product|cart|checkout|login|register|account|invoice|admin|delivery|profile|wishlist|search|cart-data|media)(?:/|$)#', $path)) { require __DIR__ . '/index.php'; return true; }
 http_response_code(404);
 echo 'Not found';

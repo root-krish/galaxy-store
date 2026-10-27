@@ -5,6 +5,12 @@ require_once __DIR__ . '/app/bootstrap.php';
 require_once __DIR__ . '/app/views.php';
 require_once __DIR__ . '/app/features.php';
 require_once __DIR__ . '/app/admin.php';
+require_once __DIR__ . '/app/routes.php';
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['page'] ?? '') === 'search') {
+    $q = mb_substr((string) ($_GET['q'] ?? ''), 0, 100);
+    json_response(['items' => array_map(static fn(array $p): array => ['name' => $p['name'], 'price' => money($p['price']), 'url' => url('product', ['id' => $p['id']])], array_slice(store()->products($q), 0, 8))]);
+}
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['page'] ?? '') === 'cart-data') json_response(cart_response());
 
 if (($_GET['page'] ?? '') === 'media' && in_array($_SERVER['REQUEST_METHOD'], ['GET', 'HEAD'], true)) {
     image_uploads()->serve(is_string($_GET['image'] ?? null) ? $_GET['image'] : '');
@@ -29,6 +35,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     try {
         switch ($action) {
+            case 'pay_order':
+                $link = store()->paymentLink((int) ($_POST['order_id'] ?? 0), require_login());
+                header('Location: ' . $link, true, 303); exit;
+            case 'verify_payment':
+                store()->verifyPayment((int) ($_POST['order_id'] ?? 0), require_login());
+                flash('success', 'Payment confirmed by Razorpay.');
+                redirect('invoice', ['id' => (int) $_POST['order_id']]);
+            case 'export_orders':
+                require_role('admin');
+                header('Content-Type: text/csv; charset=utf-8');
+                header('Content-Disposition: attachment; filename="orders.csv"');
+                $out = fopen('php://output', 'w'); fwrite($out, "\xEF\xBB\xBF");
+                fputcsv($out, ['Order', 'Customer', 'Email', 'Status', 'Payment', 'Total INR', 'Created', 'Recipient', 'Phone', 'Address', 'City', 'PIN', 'Items'], ',', '"', '');
+                foreach (store()->allOrders() as $order) {
+                    $row = [$order['number'], $order['customer_name'], $order['customer_email'], $order['status'], $order['payment_status'], $order['grand_total'], $order['created_at'], $order['address']['recipient'] ?? '', $order['address']['phone'] ?? '', $order['address']['line1'] ?? '', $order['address']['city'] ?? '', $order['address']['postal_code'] ?? '', implode('; ', array_map(static fn(array $line): string => $line['sku'] . ' x ' . $line['quantity'], $order['lines']))];
+                    $row = array_map(static fn($v) => preg_match('/^[\s]*[=+@-]/u', (string) $v) ? "'" . $v : $v, $row);
+                    fputcsv($out, $row, ',', '"', '');
+                }
+                fclose($out); exit;
+            case 'wishlist':
+                $saved = store()->toggleWishlist(require_login(), (int) ($_POST['product_id'] ?? 0));
+                if (($_SERVER['HTTP_ACCEPT'] ?? '') === 'application/json') json_response(['saved' => $saved]);
+                redirect('wishlist');
             case 'add_to_cart':
                 $product = store()->product((int) ($_POST['product_id'] ?? 0));
                 $quantity = max(1, (int) ($_POST['quantity'] ?? 1));
@@ -42,6 +71,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $currentQuantity = (int) ($cart[$product['id']] ?? 0);
                 $cart[$product['id']] = min((int) $product['stock'], $currentQuantity + $quantity);
                 set_cart($cart);
+                if (($_SERVER['HTTP_ACCEPT'] ?? '') === 'application/json') json_response(cart_response());
                 flash('success', $product['name'] . ' was added to your cart.');
                 post_return_page('shop');
 
@@ -268,7 +298,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     } catch (Throwable $exception) {
         image_uploads()->discard($uploadedImage);
-        if (!$exception instanceof RuntimeException || $exception instanceof JsonException) {
+        if (($_SERVER['HTTP_ACCEPT'] ?? '') === 'application/json') json_response(['error' => 'Unable to complete this action. Refresh and try again.'], 400);
+        if (!$exception instanceof RuntimeException || $exception instanceof JsonException || $exception instanceof PDOException) {
             error_log((string) $exception);
             flash('error', 'We could not save your changes. Please try again.');
         } else {
@@ -279,12 +310,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $page = (string) ($_GET['page'] ?? 'home');
-$allowedPages = ['home', 'shop', 'cart', 'checkout', 'login', 'register', 'account', 'invoice', 'admin', 'delivery', 'profile'];
+$allowedPages = ['product', 'wishlist', 'home', 'shop', 'cart', 'checkout', 'login', 'register', 'account', 'invoice', 'admin', 'delivery', 'profile'];
 if (!in_array($page, $allowedPages, true)) {
     $page = 'home';
 }
 
 switch ($page) {
+    case 'product':
+        $product = store()->product((int) ($_GET['id'] ?? 0));
+        if (!$product || !$product['is_active']) { http_response_code(404); exit('Product not found'); }
+        $GLOBALS['og_image'] = !empty($product['image_path']) ? url('media', ['image' => $product['image_path']]) : (equipment_asset($product['visual']) ?? '/assets/images/gear.svg');
+        render_header($product['name'], 'product');
+        echo '<section class="content-section"><div class="product-grid">'; render_product_card($product); echo '</div></section>'; break;
+    case 'wishlist':
+        $user = require_login(); render_header('Your wishlist', 'wishlist');
+        echo '<section class="content-section"><h1>Your wishlist</h1><div class="product-grid">';
+        $saved = store()->wishlist($user['id']);
+        foreach (store()->products() as $product) if (in_array((int) $product['id'], $saved, true)) render_product_card($product);
+        if (!$saved) echo '<p>Save your favourite gear from the shop.</p>';
+        echo '</div></section>'; break;
     case 'home':
         render_header('Sport equipment for every orbit', 'home');
         render_home();

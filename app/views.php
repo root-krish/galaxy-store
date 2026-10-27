@@ -12,8 +12,11 @@ function render_header(string $title, string $page): void
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="<?= h(shop_settings()['text_color']) ?>">
+    <meta property="og:title" content="<?= h($title . ' · ' . shop_name()) ?>">
+    <meta property="og:type" content="<?= $page === 'product' ? 'product' : 'website' ?>">
+    <meta property="og:image" content="<?= h(rtrim(getenv('SG_PUBLIC_URL') ?: 'http://localhost:8000', '/') . (!empty($GLOBALS['og_image']) ? $GLOBALS['og_image'] : '/assets/images/gear.svg')) ?>">
     <title><?= h($title) ?> · <?= h(shop_name()) ?></title>
-    <link rel="stylesheet" href="assets/css/app.css">
+    <link rel="stylesheet" href="/assets/css/app.css">
     <style data-store-theme>:root {<?php foreach (Branding::cssVariables(shop_settings()) as $key => $value): ?><?= h($key) ?>:<?= h($value) ?>;<?php endforeach; ?>}</style>
 </head>
 <body class="cards-<?= h(shop_settings()['card_style']) ?> catalogue-cols-<?= h(shop_settings()['catalogue_columns']) ?>">
@@ -35,8 +38,9 @@ function render_header(string $title, string $page): void
                     <a class="<?= $page === 'account' ? 'active' : '' ?>" href="<?= h(url('account')) ?>">My orders</a>
                 <?php endif; ?>
                 <?php if ($user && $user['role'] === 'delivery'): ?><a href="<?= h(url('delivery')) ?>">Delivery hub</a><?php endif; ?>
-                <?php if ($user): ?><a href="<?= h(url('profile')) ?>">Profile</a><?php endif; ?>
+                <?php if ($user): ?><a href="/wishlist">Wishlist</a><a href="<?= h(url('profile')) ?>">Profile</a><?php endif; ?>
             </nav>
+            <form action="/shop" method="get" class="header-search" role="search"><label class="sr-only" for="header-search">Search equipment</label><input id="header-search" name="q" placeholder="Search gear or brands" autocomplete="off" aria-controls="search-suggestions"><ul id="search-suggestions" hidden aria-label="Search suggestions"></ul></form>
             <div class="nav-actions">
                 <a class="cart-link <?= $page === 'cart' ? 'active' : '' ?>" href="<?= h(url('cart')) ?>" aria-label="Shopping cart">
                     <span class="cart-icon"><?= cart_icon() ?></span>
@@ -116,7 +120,8 @@ function render_footer(): void
         </div>
     </footer>
 </div>
-<script src="assets/js/app.js"></script>
+<dialog id="cart-drawer" aria-labelledby="cart-heading"><button type="button" data-close-cart aria-label="Close cart">×</button><h2 id="cart-heading">Your cart</h2><div data-cart-content aria-live="polite"></div><a class="button" href="/cart">Edit cart</a><a class="button button-primary" href="/checkout">Checkout</a></dialog>
+<script src="/assets/js/app.js"></script>
 </body>
 </html>
 <?php
@@ -162,8 +167,9 @@ function render_product_card(array $product, bool $compact = false): void
         </div>
         <div class="product-details">
             <div class="product-meta"><span><?= h($category) ?></span><span class="meta-dot">·</span><span><?= h($product['brand']) ?></span></div>
-            <h3><?= h($product['name']) ?></h3>
+            <h3><a href="<?= h(url('product', ['id' => $product['id']])) ?>"><?= h($product['name']) ?></a></h3>
             <?php if (!$compact): ?><p><?= h($product['description']) ?></p><?php endif; ?>
+            <?php if ($viewer = current_user()): ?><form method="post" data-wishlist-form><?= csrf_field() ?><input type="hidden" name="action" value="wishlist"><input type="hidden" name="product_id" value="<?= (int) $product['id'] ?>"><button class="button button-small" aria-pressed="<?= in_array((int) $product['id'], store()->wishlist($viewer['id']), true) ? 'true' : 'false' ?>" type="submit"><?= in_array((int) $product['id'], store()->wishlist($viewer['id']), true) ? 'Saved to wishlist' : 'Add to wishlist' ?></button></form><?php else: ?><a href="<?= h(url('login')) ?>">Sign in to save</a><?php endif; ?>
             <div class="product-bottom">
                 <div><strong><?= money((float) $product['price']) ?></strong><?php render_availability($product); ?></div>
                 <?php if ($product['stock'] > 0): ?>
@@ -196,19 +202,19 @@ function render_home(): void
             <p><?= h(shop_settings()['hero_description']) ?></p>
             <div class="hero-actions">
                 <a class="button button-primary button-large" href="<?= h(url('shop')) ?>"><?= h(shop_settings()['hero_button_text']) ?> <span>→</span></a>
-                <a class="button button-ghost button-large" href="#featured-products"><span class="play-mark">▶</span> See what’s new</a>
+                <?php if (shop_settings()['show_featured'] === '1'): ?><a class="button button-ghost button-large" href="#featured-products"><span class="play-mark">▶</span> See what’s new</a><?php endif; ?>
             </div>
             <div class="hero-proof">
-                <div class="avatar-group"><span>⚽</span><span>🏏</span><span>🏸</span></div>
+                <div class="avatar-group"><span><img src="/assets/images/football.svg" alt=""></span><span><img src="/assets/images/bat.svg" alt=""></span><span><img src="/assets/images/racket.svg" alt=""></span></div>
                 <p><strong>4.9 / 5 from players</strong><br>Gear that earns a place in your kit.</p>
             </div>
         </div>
         <div class="hero-visual" aria-label="Sports gear orbit illustration">
             <div class="hero-grid"></div>
-            <div class="planet planet-main"><span>⚽</span></div>
-            <div class="planet planet-small planet-one">🏏</div>
-            <div class="planet planet-small planet-two">🏸</div>
-            <div class="planet planet-small planet-three">🏀</div>
+            <div class="planet planet-main"><img src="/assets/images/football.svg" alt="Football"></div>
+            <div class="planet planet-small planet-one"><img src="/assets/images/bat.svg" alt=""></div>
+            <div class="planet planet-small planet-two"><img src="/assets/images/racket.svg" alt=""></div>
+            <div class="planet planet-small planet-three"><img src="/assets/images/basketball.svg" alt=""></div>
             <div class="orbit orbit-large"></div><div class="orbit orbit-mid"></div><div class="orbit orbit-small"></div>
             <div class="hero-stat stat-one"><strong>48h</strong><span>dispatch</span></div>
             <div class="hero-stat stat-two"><strong>12k+</strong><span>players equipped</span></div>
@@ -224,7 +230,7 @@ function render_home(): void
         <div><span class="benefit-icon">⌁</span><p><strong>Always in the loop</strong><small>Track every delivery step</small></p></div>
     </section>
 
-    <?php endif; ?><section class="content-section categories-section">
+    <?php endif; ?><?php if (shop_settings()['show_categories'] === '1'): ?><section class="content-section categories-section">
         <?php render_section_heading('PICK YOUR PLAYGROUND', 'Whatever moves you.', 'A compact collection of serious equipment for everyday players.', url('shop'), 'Explore all gear'); ?>
         <div class="category-grid">
             <?php foreach ($categories as $category): ?>
@@ -237,14 +243,14 @@ function render_home(): void
         </div>
     </section>
 
-    <section class="content-section featured-section" id="featured-products">
+    <?php endif; ?><?php if (shop_settings()['show_featured'] === '1'): ?><section class="content-section featured-section" id="featured-products">
         <?php render_section_heading('CURATED FOR THE SEASON', 'The current line-up.', 'Reliable favourites, fresh kit, and no filler.', url('shop'), 'View the full store'); ?>
         <div class="product-grid">
             <?php foreach ($featured as $product): render_product_card($product); endforeach; ?>
         </div>
     </section>
 
-    <?php if (shop_settings()['show_story'] === '1'): ?><section class="story-panel" id="why-galaxy">
+    <?php endif; ?><?php if (shop_settings()['show_story'] === '1'): ?><section class="story-panel" id="why-galaxy">
         <div class="story-content">
             <p class="eyebrow">THE GALAXY STANDARD</p>
             <h2>Less time hunting for kit.<br><em>More time playing.</em></h2>
@@ -336,7 +342,7 @@ function render_cart_page(): void
                                 <div class="cart-product-art art-<?= (int) $product['category_id'] ?>"><?= product_visual($product) ?></div>
                                 <div class="cart-product-copy">
                                     <span><?= h(category_name((int) $product['category_id'])) ?> · <?= h($product['brand']) ?></span>
-                                    <h3><?= h($product['name']) ?></h3>
+                                    <h3><a href="<?= h(url('product', ['id' => $product['id']])) ?>"><?= h($product['name']) ?></a></h3>
                                     <?php render_availability($product); ?>
                                 </div>
                                 <div class="quantity-control">
@@ -388,7 +394,7 @@ function render_checkout_page(array $user): void
     }
     ?>
     <section class="page-intro compact-intro checkout-intro">
-        <div><p class="eyebrow">SECURE CHECKOUT</p><h1>One last lap.</h1><p>Payment options are simulated safely for this project demo.</p></div>
+        <div><p class="eyebrow">SECURE CHECKOUT</p><h1>One last lap.</h1><p>Choose cash on delivery or an available online payment option.</p></div>
         <div class="checkout-steps"><span class="active">1<br><small>Details</small></span><i></i><span>2<br><small>Confirm</small></span><i></i><span>3<br><small>Invoice</small></span></div>
     </section>
     <section class="checkout-layout content-section">
@@ -407,11 +413,12 @@ function render_checkout_page(array $user): void
                 </div>
             </section>
             <section class="checkout-block">
-                <div class="form-block-heading"><span class="form-step">02</span><div><h2>How would you like to pay?</h2><p>No real charge is made in this demo.</p></div></div>
+                <div class="form-block-heading"><span class="form-step">02</span><div><h2>How would you like to pay?</h2><p>Online payments are confirmed by the payment provider.</p></div></div>
                 <div class="payment-options">
                     <label class="payment-choice"><input type="radio" name="payment_method" value="cod" checked><span class="payment-icon">₹</span><span><strong>Cash on delivery</strong><small>Pay when the order arrives</small></span><i></i></label>
-                    <label class="payment-choice"><input type="radio" name="payment_method" value="upi"><span class="payment-icon">◌</span><span><strong>UPI</strong><small>Instant demo confirmation</small></span><i></i></label>
-                    <label class="payment-choice"><input type="radio" name="payment_method" value="card"><span class="payment-icon">▣</span><span><strong>Credit / debit card</strong><small>Secure simulated payment</small></span><i></i></label>
+                    <?php if (Payments::configured()): ?><label class="payment-choice"><input type="radio" name="payment_method" value="razorpay"><span><strong>Pay online with Razorpay</strong><small>UPI, cards and more · pay from your receipt</small></span></label><?php endif; ?>
+                    <?php if (shop_settings()['demo_access'] === '1'): ?><label class="payment-choice"><input type="radio" name="payment_method" value="upi"><span class="payment-icon">◌</span><span><strong>UPI</strong><small>Instant demo confirmation</small></span><i></i></label>
+                    <label class="payment-choice"><input type="radio" name="payment_method" value="card"><span class="payment-icon">▣</span><span><strong>Credit / debit card</strong><small>Secure simulated payment</small></span><i></i></label><?php endif; ?>
                 </div>
             </section>
             <section class="checkout-block coupon-block">
@@ -466,10 +473,10 @@ function render_login_page(): void
                     <button class="button button-primary button-full" type="submit">Sign in <span>→</span></button>
                 </form>
                 <p class="auth-switch">New to <?= h(shop_name()) ?>? <a href="<?= h(url('register')) ?>">Create an account</a></p>
-                <div class="demo-accounts">
+                <?php if (shop_settings()['demo_access'] === '1'): ?><div class="demo-accounts">
                     <p><span>◌</span> Demo access</p>
                     <div><button type="button" data-demo-login data-email="customer@sportsgalaxy.local" data-password="Customer@123">Customer</button><button type="button" data-demo-login data-email="admin@sportsgalaxy.local" data-password="Admin@123">Admin</button><button type="button" data-demo-login data-email="delivery@sportsgalaxy.local" data-password="Delivery@123">Delivery</button></div>
-                </div>
+                </div><?php endif; ?>
             </div>
         </div>
     </section>
@@ -566,6 +573,11 @@ function render_account_page(array $user): void
 
 function render_invoice_page(array $order, bool $track = false): void
 {
+    if ($order['payment_method'] === 'razorpay' && $order['payment_status'] === 'pending') {
+        echo '<section class="content-section"><h2>Online payment pending</h2><p>Complete payment, then check its status here. Your order ships after verification.</p>';
+        foreach (['pay_order' => 'Pay securely with Razorpay', 'verify_payment' => 'Check payment status'] as $action => $label) echo '<form method="post">' . csrf_field() . '<input type="hidden" name="action" value="' . $action . '"><input type="hidden" name="order_id" value="' . (int) $order['id'] . '"><button class="button button-primary" type="submit">' . $label . '</button></form>';
+        echo '</section>';
+    }
     ?>
     <section class="invoice-page <?= $track ? 'tracking-mode' : '' ?>">
         <div class="invoice-actions content-section">

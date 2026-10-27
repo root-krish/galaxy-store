@@ -8,3 +8,6 @@ Thumbs.db
 __pycache__/
 
 /storage/uploads/
+
+/vendor/
+.env

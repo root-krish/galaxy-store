@@ -13,7 +13,7 @@ final class Branding
         'hero_button_text' => 'Shop the collection',
         'footer_description' => 'Curated gear for the way you play. Built for every first serve, final sprint, and weekend win.',
         'support_email' => '', 'support_phone' => '',
-        'show_benefits' => '1', 'show_story' => '1', 'show_quote' => '1',
+        'demo_access' => '1', 'show_categories' => '1', 'show_featured' => '1', 'show_benefits' => '1', 'show_story' => '1', 'show_quote' => '1',
     ];
 
     public static function validate(array $settings): array
@@ -42,7 +42,7 @@ final class Branding
         }
         if ($result['support_email'] !== '' && !filter_var($result['support_email'], FILTER_VALIDATE_EMAIL)) throw new RuntimeException('Enter a valid support email.');
         if ($result['support_phone'] !== '' && preg_match('/^\+?[0-9 ()-]{7,30}$/D', $result['support_phone']) !== 1) throw new RuntimeException('Enter a valid support phone number.');
-        foreach (['heading_font' => ['classic', 'modern', 'rounded'], 'card_style' => ['rounded', 'square'], 'catalogue_columns' => ['3', '4'], 'show_benefits' => ['0', '1'], 'show_story' => ['0', '1'], 'show_quote' => ['0', '1']] as $key => $allowed) {
+        foreach (['heading_font' => ['classic', 'modern', 'rounded'], 'card_style' => ['rounded', 'square'], 'catalogue_columns' => ['3', '4'], 'demo_access' => ['0', '1'], 'show_categories' => ['0', '1'], 'show_featured' => ['0', '1'], 'show_benefits' => ['0', '1'], 'show_story' => ['0', '1'], 'show_quote' => ['0', '1']] as $key => $allowed) {
             $value = (string) ($settings[$key] ?? self::DEFAULTS[$key]);
             if (!in_array($value, $allowed, true)) throw new RuntimeException('Choose a valid ' . str_replace('_', ' ', $key) . '.');
             $result[$key] = $value;
