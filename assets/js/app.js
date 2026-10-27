@@ -9,6 +9,10 @@
     });
   }
 
+  document.querySelectorAll('[data-print-receipt]').forEach((button) => {
+    button.addEventListener('click', () => window.print());
+  });
+
   document.querySelectorAll('[data-dismiss-flash]').forEach((button) => {
     button.addEventListener('click', () => {
       const flash = button.closest('.flash');

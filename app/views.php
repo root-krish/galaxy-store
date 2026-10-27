@@ -579,7 +579,7 @@ function render_invoice_page(array $order, bool $track = false): void
     <section class="invoice-page <?= $track ? 'tracking-mode' : '' ?>">
         <div class="invoice-actions content-section">
             <a class="back-link" href="<?= h((int) $order['user_id'] === (int) current_user()['id'] ? url('account') : url(current_user()['role'] === 'admin' ? 'admin' : 'delivery')) ?>">← Back to workspace</a>
-            <div><button class="button button-ghost print-button" type="button" onclick="window.print()">Print receipt <span>↗</span></button><?php if (!$track): ?><a class="button button-primary" href="<?= h(url('invoice', ['id' => $order['id'], 'track' => 1])) ?>">Track order <span>→</span></a><?php endif; ?></div>
+            <div><button class="button button-ghost print-button" type="button" data-print-receipt>Print receipt <span>↗</span></button><?php if (!$track): ?><a class="button button-primary" href="<?= h(url('invoice', ['id' => $order['id'], 'track' => 1])) ?>">Track order <span>→</span></a><?php endif; ?></div>
         </div>
         <div class="invoice-layout content-section">
             <article class="invoice-card">
