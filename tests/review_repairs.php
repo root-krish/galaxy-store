@@ -18,6 +18,7 @@ final class Payments
 const SG_NAME = 'Sports Galaxy';
 date_default_timezone_set('Asia/Kolkata');
 foreach (['Branding', 'AdminOperations', 'Commerce', 'FinanceReports', 'Store'] as $class) require __DIR__ . '/../app/' . $class . '.php';
+putenv('SG_DB_DSN=');
 $path = sys_get_temp_dir() . '/galaxy-review-' . bin2hex(random_bytes(6)) . '.json';
 $store = new Store($path); $checks = 0;
 function check_repair(bool $condition, string $message): void {
