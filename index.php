@@ -24,6 +24,9 @@ function post_return_page(string $fallback = 'home'): never
     $parameters = [];
     if ($page === 'admin' && !empty($_POST['return_tab'])) {
         $parameters['tab'] = preg_replace('/[^a-z]/', '', (string) $_POST['return_tab']);
+        if ($parameters['tab'] === 'finance') {
+            foreach (['finance_period', 'finance_date'] as $key) if (is_string($_POST[$key] ?? null)) $parameters[$key] = mb_substr($_POST[$key], 0, 10);
+        }
     }
     redirect($page, $parameters);
 }
@@ -244,6 +247,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 flash('success', 'Contact details updated for ' . $partner['name'] . '.');
                 redirect('admin', ['tab' => 'partners']);
 
+            case 'set_demo_access':
+                $actor = require_role('admin');
+                store()->saveBranding(['demo_access' => (string) ($_POST['demo_access'] ?? '')], $actor);
+                flash('success', 'Demo access updated.');
+                redirect('admin', ['tab' => 'settings']);
+
             case 'save_branding':
                 $actor = require_role('admin');
                 $attributes = $_POST;
@@ -273,8 +282,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             case 'add_income':
                 $actor = require_role('admin');
                 store()->addIncome($_POST, $actor);
-                flash('success', 'External income recorded. Monthly profit has been recalculated.');
-                redirect('admin', ['tab' => 'finance']);
+                flash('success', 'External income recorded. Profit has been recalculated.');
+                post_return_page('admin');
 
             case 'update_profile_photo':
                 $actor = require_login();
@@ -305,7 +314,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             flash('error', $exception->getMessage());
         }
-        post_return_page(match ($action) { 'login' => 'login', 'register' => 'register', 'update_customer_profile' => 'profile', 'update_delivery_partner' => 'admin', 'save_branding' => 'admin', 'reset_branding' => 'admin', 'create_delivery_partner' => 'admin', 'add_income' => 'admin', 'update_profile_photo' => 'profile', default => 'home' });
+        post_return_page(match ($action) { 'login' => 'login', 'register' => 'register', 'update_customer_profile' => 'profile', 'update_delivery_partner' => 'admin', 'set_demo_access' => 'admin', 'save_branding' => 'admin', 'reset_branding' => 'admin', 'create_delivery_partner' => 'admin', 'add_income' => 'admin', 'update_profile_photo' => 'profile', default => 'home' });
     }
 }
 

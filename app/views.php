@@ -703,16 +703,7 @@ function render_admin_page(array $user): void
             <?php elseif ($tab === 'partners'): ?>
                 <?php render_delivery_partners_admin($partners); ?>
             <?php elseif ($tab === 'finance'): ?>
-                <div class="workspace-content-head"><div><p class="eyebrow">FINANCE DESK</p><h2>Numbers with context.</h2></div><span class="date-chip"><?= date('F Y') ?></span></div>
-                <div class="finance-summary finance-with-income">
-                    <article><small>Sales after discounts, excluding GST and delivery</small><strong><?= money((float) $stats['month_net_sales']) ?></strong></article>
-                    <article><small>+ External income</small><strong><?= money((float) $stats['month_income']) ?></strong></article>
-                    <article><small>− Item cost snapshots</small><strong><?= money((float) $stats['month_cost']) ?></strong></article>
-                    <article><small>− Operating expenses</small><strong><?= money((float) $stats['month_expenses']) ?></strong></article>
-                    <article class="profit"><small>Net profit</small><strong><?= money((float) $stats['month_profit']) ?></strong></article>
-                </div>
-                <div class="admin-main-grid lower-grid"><section class="admin-card expense-form-card"><p class="eyebrow">LOG AN EXPENSE</p><h3>Keep profit honest.</h3><form method="post" class="stacked-form"><?= csrf_field() ?><input type="hidden" name="action" value="add_expense"><input type="hidden" name="return_page" value="admin"><input type="hidden" name="return_tab" value="finance"><label>Date<input type="date" name="date" value="<?= date('Y-m-d') ?>"></label><label>Category<input name="category" required placeholder="e.g. Utilities"></label><label>Description<input name="description" required placeholder="What was this for?"></label><label>Amount<input type="number" min="0.01" step="0.01" name="amount" required placeholder="0.00"></label><button class="button button-primary" type="submit">Add expense <span>→</span></button></form></section><section class="admin-card expenses-list-card"><div class="admin-card-head"><div><p class="eyebrow">RECENT OPERATING COSTS</p><h3>Expense ledger.</h3></div></div><div class="expense-list"><?php foreach (store()->expenses() as $expense): ?><div><span class="expense-icon">◒</span><span><strong><?= h($expense['category']) ?></strong><small><?= h($expense['description']) ?> · <?= h(format_date($expense['date'], 'd M')) ?></small></span><em>−<?= money((float) $expense['amount']) ?></em></div><?php endforeach; ?></div></section></div>
-                <?php render_external_income(); ?>
+                <?php render_finance_page($user); ?>
             <?php endif; ?>
         </div>
     </section>

@@ -85,7 +85,7 @@ function render_extended_settings(array $settings): void
         <label>Heading font<select name="heading_font"><?php foreach (['classic' => 'Classic serif', 'modern' => 'Modern sans serif', 'rounded' => 'Friendly sans serif'] as $value => $name): ?><option value="<?= h($value) ?>" <?= $settings['heading_font'] === $value ? 'selected' : '' ?>><?= h($name) ?></option><?php endforeach; ?></select></label>
         <label>Product card shape<select name="card_style"><option value="rounded" <?= $settings['card_style'] === 'rounded' ? 'selected' : '' ?>>Rounded corners</option><option value="square" <?= $settings['card_style'] === 'square' ? 'selected' : '' ?>>Square corners</option></select></label>
         <label>Products per row on desktop<select name="catalogue_columns"><?php foreach (['3', '4'] as $value): ?><option value="<?= h($value) ?>" <?= $settings['catalogue_columns'] === $value ? 'selected' : '' ?>><?= h($value) ?> columns</option><?php endforeach; ?></select></label>
-        <?php foreach (['demo_access' => 'Enable demo account access (create a personal admin first)', 'show_categories' => 'Show categories', 'show_featured' => 'Show featured products', 'show_benefits' => 'Show service benefits', 'show_story' => 'Show our story', 'show_quote' => 'Show sports quote'] as $key => $label): ?><input type="hidden" name="<?= h($key) ?>" value="0"><label class="checkbox-label"><input type="checkbox" name="<?= h($key) ?>" value="1" <?= $settings[$key] === '1' ? 'checked' : '' ?>><span><?= h($label) ?></span></label><?php endforeach; ?>
+        <?php foreach (['show_categories' => 'Show categories', 'show_featured' => 'Show featured products', 'show_benefits' => 'Show service benefits', 'show_story' => 'Show our story', 'show_quote' => 'Show sports quote'] as $key => $label): ?><input type="hidden" name="<?= h($key) ?>" value="0"><label class="checkbox-label"><input type="checkbox" name="<?= h($key) ?>" value="1" <?= $settings[$key] === '1' ? 'checked' : '' ?>><span><?= h($label) ?></span></label><?php endforeach; ?>
     </fieldset>
     <fieldset class="settings-group"><legend>Public contact details</legend><label>Support email<input type="email" name="support_email" maxlength="190" value="<?= h($settings['support_email']) ?>"></label><label>Support phone<input type="tel" name="support_phone" maxlength="30" value="<?= h($settings['support_phone']) ?>"></label><p class="quiet-copy">These details appear in the footer. Leave blank to hide them.</p></fieldset>
     <?php
@@ -124,4 +124,65 @@ function render_order_command(array $orders, array $partners): void
         <?php if (!$visible): ?><div class="empty-state"><div class="empty-orb">⌕</div><h3>No orders match these filters.</h3><p>Try another customer, order number, or status.</p><a class="button button-ghost" href="<?= h(url('admin', ['tab' => 'orders'])) ?>">Show all orders</a></div><?php endif; ?>
     </div>
     <?php
+}
+
+function render_finance_page(array $user): void
+{
+    $period = is_string($_GET['finance_period'] ?? null) ? $_GET['finance_period'] : 'month';
+    $date = is_string($_GET['finance_date'] ?? null) ? $_GET['finance_date'] : date('Y-m-d');
+    try { $report = store()->financeReport($period, $date, $user); }
+    catch (RuntimeException $error) {
+        echo '<p class="finance-error" role="alert">' . h($error->getMessage()) . '</p>';
+        $period = 'month'; $date = date('Y-m-d');
+        $report = store()->financeReport($period, $date, $user);
+    }
+    $totals = $report['totals'];
+    $series = ['sales' => 'Net sales', 'income' => 'External income', 'spending' => 'Item costs + expenses', 'profit' => 'Net profit'];
+    $buckets = array_values($report['buckets']);
+    foreach ($buckets as &$bucket) $bucket['spending'] = $bucket['cost'] + $bucket['expenses'];
+    unset($bucket);
+    $values = [0];
+    foreach ($buckets as $bucket) foreach (array_keys($series) as $key) $values[] = $bucket[$key];
+    $min = min($values); $max = max($values); $range = max(1, $max - $min);
+    $y = static fn(float $value): float => round(200 - ($value - $min) / $range * 160, 2);
+    $x = static fn(int $index): float => round(90 + $index * 680 / max(1, count($buckets) - 1), 2);
+    ?>
+    <div class="workspace-content-head"><div><p class="eyebrow">FINANCE DESK</p><h2>Financial history.</h2><p>Sales after discounts, excluding GST and delivery. Cancelled orders are excluded. Profit uses the item costs saved with each order.</p></div><span class="date-chip"><?= h($report['label']) ?></span></div>
+    <form method="get" action="/admin" class="finance-filters admin-card">
+        <input type="hidden" name="tab" value="finance">
+        <label>View by<select name="finance_period"><?php foreach (['day' => 'Day', 'month' => 'Month', 'year' => 'Year'] as $value => $label): ?><option value="<?= $value ?>" <?= $period === $value ? 'selected' : '' ?>><?= $label ?></option><?php endforeach; ?></select></label>
+        <label>Date to view<input type="date" name="finance_date" min="1900-01-01" max="9998-12-31" required value="<?= h($date) ?>"></label>
+        <button class="button button-primary" type="submit">View financial details</button>
+        <p>Choose any date in the month or year you want to view.</p>
+    </form>
+    <nav class="finance-navigation" aria-label="Financial period">
+        <?php foreach (['previous' => '← Previous ', 'next' => 'Next '] as $key => $label): if ($report[$key] !== null): ?><a class="button button-ghost" href="<?= h(url('admin', ['tab' => 'finance', 'finance_period' => $period, 'finance_date' => $report[$key]])) ?>"><?= h($label . $period) ?></a><?php endif; endforeach; ?>
+        <a href="<?= h(url('admin', ['tab' => 'finance'])) ?>">Current month</a>
+    </nav>
+    <div class="finance-summary finance-with-income">
+        <?php foreach (['sales' => 'Net sales', 'income' => 'External income', 'cost' => 'Historical item costs', 'expenses' => 'Operating expenses', 'profit' => 'Net profit'] as $key => $label): ?><article class="<?= $key === 'profit' ? 'profit' : '' ?>"><small><?= h($label) ?></small><strong><?= money($totals[$key]) ?></strong></article><?php endforeach; ?>
+    </div>
+    <section class="admin-card finance-chart-card">
+        <h3>Financial graph · <?= h($report['label']) ?></h3>
+        <p><?= (int) $totals['orders'] ?> orders in this period. <?= $period === 'day' ? 'Orders appear by hour. Income and expenses have dates only, so they appear at 00:00.' : 'Select a row below to explore its financial details.' ?></p>
+        <div class="finance-chart-scroll"><svg class="finance-chart" viewBox="0 0 800 250" role="img" aria-labelledby="finance-chart-title finance-chart-description">
+            <title id="finance-chart-title">Financial graph for <?= h($report['label']) ?></title><desc id="finance-chart-description">Net sales, external income, item costs plus expenses, and net profit in INR. Exact values and period links are in the table below.</desc>
+            <?php foreach ([$min, ($min + $max) / 2, $max] as $tick): ?><line x1="90" y1="<?= $y($tick) ?>" x2="770" y2="<?= $y($tick) ?>" class="finance-gridline"/><text x="82" y="<?= $y($tick) + 4 ?>" text-anchor="end"><?= h(number_format($tick, 0)) ?></text><?php endforeach; ?>
+            <line x1="90" y1="<?= $y(0) ?>" x2="770" y2="<?= $y(0) ?>" class="finance-zero"/>
+            <?php foreach ($series as $key => $label): $points = []; foreach ($buckets as $index => $bucket) $points[] = $x($index) . ',' . $y($bucket[$key]); ?><polyline points="<?= h(implode(' ', $points)) ?>" class="finance-line finance-<?= $key ?>"><title><?= h($label) ?></title></polyline><?php endforeach; ?>
+            <?php foreach ($buckets as $index => $bucket): if ($index % (int) ceil(count($buckets) / 8) === 0 || $index === count($buckets) - 1): ?><text x="<?= $x($index) ?>" y="225" text-anchor="middle"><?= h($bucket['label']) ?></text><?php endif; endforeach; ?>
+        </svg></div>
+        <div class="finance-legend"><?php foreach ($series as $key => $label): ?><span><i class="finance-<?= $key ?>"></i><?= h($label) ?></span><?php endforeach; ?></div>
+        <details><summary>View exact amounts and explore dates</summary><div class="table-scroll"><table class="admin-table"><caption>Financial breakdown in INR · <?= h($report['label']) ?></caption><thead><tr><th scope="col">Period</th><th scope="col">Orders</th><th scope="col">Net sales</th><th scope="col">External income</th><th scope="col">Item costs</th><th scope="col">Expenses</th><th scope="col">Net profit</th></tr></thead><tbody>
+        <?php foreach ($buckets as $bucket): ?><tr><th scope="row"><?php if ($period !== 'day'): ?><a href="<?= h(url('admin', ['tab' => 'finance', 'finance_period' => $period === 'year' ? 'month' : 'day', 'finance_date' => $bucket['date']])) ?>"><?= h($bucket['label']) ?></a><?php else: ?><?= h($bucket['label']) ?><?php endif; ?></th><td><?= $bucket['orders'] ?></td><?php foreach (['sales', 'income', 'cost', 'expenses', 'profit'] as $key): ?><td><?= money($bucket[$key]) ?></td><?php endforeach; ?></tr><?php endforeach; ?>
+        </tbody></table></div></details>
+    </section>
+    <section class="admin-card"><h3>Orders · <?= h($report['label']) ?></h3><div class="table-scroll"><table class="admin-table"><thead><tr><th>Order</th><th>Date</th><th>Customer</th><th>Status</th><th>Net sales</th></tr></thead><tbody><?php foreach ($report['orders'] as $order): ?><tr><td><a href="<?= h(url('invoice', ['id' => $order['id']])) ?>"><?= h($order['number']) ?></a></td><td><?= h(format_date($order['created_at'])) ?></td><td><?= h($order['customer_name']) ?></td><td><?= h(status_label($order['status'])) ?></td><td><?= money($order['subtotal'] - $order['discount']) ?></td></tr><?php endforeach; ?></tbody></table></div><?php if (!$report['orders']): ?><p>No orders in this period.</p><?php endif; ?></section>
+    <div class="admin-main-grid lower-grid"><section class="admin-card"><h3>Record an expense</h3><form method="post" class="stacked-form"><?php admin_form_fields('add_expense', 'finance'); finance_return_fields($period, $date); ?><label>Date<input type="date" name="date" required value="<?= h($date) ?>"></label><label>Category<input name="category" required></label><label>Description<input name="description" required></label><label>Amount<input type="number" min="0.01" step="0.01" name="amount" required></label><button class="button button-primary" type="submit">Add expense</button></form></section><section class="admin-card"><h3>Expense ledger · <?= h($report['label']) ?></h3><div class="expense-list"><?php foreach ($report['expenses'] as $expense): ?><div><span class="expense-icon">−</span><span><strong><?= h($expense['category']) ?></strong><small><?= h($expense['description']) ?> · <?= h(format_date($expense['date'], 'd M Y')) ?></small></span><em>−<?= money($expense['amount']) ?></em></div><?php endforeach; ?><?php if (!$report['expenses']): ?><p>No expenses in this period.</p><?php endif; ?></div></section></div>
+    <?php render_external_income($report['incomes'], $period, $date);
+}
+
+function finance_return_fields(string $period, string $date): void
+{
+    echo '<input type="hidden" name="finance_period" value="' . h($period) . '"><input type="hidden" name="finance_date" value="' . h($date) . '">';
 }

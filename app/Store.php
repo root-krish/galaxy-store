@@ -9,6 +9,7 @@ final class Store
 {
     use AdminOperations;
     use Commerce;
+    use FinanceReports;
     public function __construct(private readonly string $path)
     {
         $directory = dirname($this->path);

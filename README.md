@@ -125,3 +125,11 @@ Run `composer install --no-dev` (PHPMailer is locked). Configure `SG_SMTP_HOST`,
 Schedule `php bin/send-mail.php` every minute using the same storage/database environment as the web process. New order receipts, shipping notifications and low-stock/admin notifications are queued transactionally. SMTP failures stay queued with a retry delay; workers lease messages to avoid simultaneous sends. Delivery is at least once: a process crash after SMTP accepts a message can cause a retry. Historical seeded notifications are not mailed. Verify domain authentication and real mailbox delivery before launch. Credentials belong in the service environment, never source control.
 
 Additional checks: `php tests/upgrades.php`; use a disposable imported database for `php tests/mysql.php`. Production activation requires database, HTTPS, personal admin, payment credentials, SMTP and the two scheduled workers above.
+
+### Historical finance graphs
+
+Admin → Finance provides Day, Month and Year views. Choose a date and select **View financial details**, or use Previous/Next. A day shows hourly activity, a month shows daily activity, and a year shows monthly activity. Open **View exact amounts and explore dates** to drill from a year to a month and then a specific day. The totals, order list, expense ledger and external income ledger all use the selected period. Income and expenses have dates rather than times, so the day graph places them at 00:00. Empty periods show zero values. These reports use order dates and the existing order-based profit rules; they are not payment settlement reports.
+
+Admin → Store settings now has a separate **Demo access** On/Off panel and Save button. Create a personal administrator before disabling seeded accounts. The existing session revocation and lockout protections still apply.
+
+Finance regression checks: `php tests/finance.php`.

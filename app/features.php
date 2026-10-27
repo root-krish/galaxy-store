@@ -104,8 +104,10 @@ function render_delivery_partners_admin(array $partners): void
     <?php
 }
 
-function render_external_income(): void
+function render_external_income(?array $incomes = null, string $period = 'month', ?string $date = null): void
 {
+    $incomes ??= store()->incomes();
+    $date ??= date('Y-m-d');
     ?>
     <div class="admin-main-grid lower-grid">
         <section class="admin-card">
@@ -115,7 +117,8 @@ function render_external_income(): void
                 <input type="hidden" name="action" value="add_income">
                 <input type="hidden" name="return_page" value="admin">
                 <input type="hidden" name="return_tab" value="finance">
-                <label>Income date<input type="date" name="date" required value="<?= date('Y-m-d') ?>"></label>
+                <?php finance_return_fields($period, $date); ?>
+                <label>Income date<input type="date" name="date" required value="<?= h($date) ?>"></label>
                 <label>Income category<input name="category" required placeholder="e.g. Sponsorship"></label>
                 <label>Income description<input name="description" required placeholder="Where did this income come from?"></label>
                 <label>Income amount<input type="number" name="amount" min="0.01" step="0.01" required placeholder="0.00"></label>
@@ -124,10 +127,10 @@ function render_external_income(): void
         </section>
         <section class="admin-card"><p class="eyebrow">OTHER EARNINGS</p><h3>External income ledger.</h3>
             <div class="expense-list">
-                <?php foreach (store()->incomes() as $income): ?>
+                <?php foreach ($incomes as $income): ?>
                     <div><span class="expense-icon">+</span><span><strong><?= h($income['category']) ?></strong><small><?= h($income['description']) ?> · <?= h(format_date($income['date'], 'd M Y')) ?></small></span><em class="income-amount">+<?= money((float) $income['amount']) ?></em></div>
                 <?php endforeach; ?>
-                <?php if (!store()->incomes()): ?><p class="quiet-copy">No external income recorded yet.</p><?php endif; ?>
+                <?php if (!$incomes): ?><p class="quiet-copy">No external income recorded yet.</p><?php endif; ?>
             </div>
         </section>
     </div>
@@ -157,6 +160,7 @@ function render_branding_settings(): void
     $settings = shop_settings();
     ?>
     <div class="workspace-content-head"><div><p class="eyebrow">STORE SETTINGS</p><h2>Your shop, your identity.</h2><p>Update the name, logo, and colours used across your website and receipts.</p></div></div>
+    <section class="admin-card demo-access-panel"><h3>Demo access</h3><p>Demo access is <strong><?= $settings['demo_access'] === '1' ? 'On' : 'Off' ?></strong>. Turning it off blocks all seeded demo accounts and ends their existing sessions. Create a personal administrator in Administrators first.</p><form method="post" class="finance-filters"><?= csrf_field() ?><input type="hidden" name="action" value="set_demo_access"><input type="hidden" name="return_page" value="admin"><input type="hidden" name="return_tab" value="settings"><label>Demo account access<select name="demo_access"><option value="1" <?= $settings['demo_access'] === '1' ? 'selected' : '' ?>>On</option><option value="0" <?= $settings['demo_access'] === '0' ? 'selected' : '' ?>>Off</option></select></label><button class="button button-primary" type="submit">Save demo access</button></form></section>
     <div class="admin-main-grid lower-grid">
         <section class="admin-card">
             <form method="post" enctype="multipart/form-data" class="stacked-form branding-form" data-branding-form>

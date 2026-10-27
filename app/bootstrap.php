@@ -59,6 +59,7 @@ require_once __DIR__ . '/Branding.php';
 require_once __DIR__ . '/AdminOperations.php';
 require_once __DIR__ . '/Payments.php';
 require_once __DIR__ . '/Commerce.php';
+require_once __DIR__ . '/FinanceReports.php';
 require_once __DIR__ . '/Store.php';
 
 function shop_settings(): array
