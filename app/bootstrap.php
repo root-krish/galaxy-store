@@ -50,6 +50,7 @@ header('Cache-Control: no-store');
 
 require_once __DIR__ . '/ImageUploads.php';
 require_once __DIR__ . '/Branding.php';
+require_once __DIR__ . '/AdminOperations.php';
 require_once __DIR__ . '/Store.php';
 
 function shop_settings(): array
@@ -146,13 +147,15 @@ function current_user(): ?array
 {
     $id = (int) ($_SESSION['user_id'] ?? 0);
     $user = $id ? store()->user($id) : null;
-    return $user && $user['is_active'] ? $user : null;
+    return $user && $user['is_active'] && empty($user['deleted_at'])
+        && (int) ($_SESSION['auth_version'] ?? 0) === (int) ($user['auth_version'] ?? 0) ? $user : null;
 }
 
 function login_user(array $user): void
 {
     session_regenerate_id(true);
     $_SESSION['user_id'] = $user['id'];
+    $_SESSION['auth_version'] = (int) ($user['auth_version'] ?? 0);
 }
 
 function logout_user(): void

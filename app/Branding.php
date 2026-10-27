@@ -6,6 +6,14 @@ final class Branding
     public const DEFAULTS = [
         'shop_name' => 'Sports Galaxy', 'shop_logo' => null,
         'accent_color' => '#c7f548', 'background_color' => '#f6f5ef', 'text_color' => '#0b1821',
+        'secondary_color' => '#8f7aff', 'heading_font' => 'classic', 'card_style' => 'rounded', 'catalogue_columns' => '4',
+        'announcement_text' => 'Free express delivery above ₹999 · Use GALAXY10 for 10% off',
+        'hero_title' => 'Find your game. Own your orbit.',
+        'hero_description' => 'Thoughtfully selected sport essentials, delivered with the kind of speed that keeps your momentum moving.',
+        'hero_button_text' => 'Shop the collection',
+        'footer_description' => 'Curated gear for the way you play. Built for every first serve, final sprint, and weekend win.',
+        'support_email' => '', 'support_phone' => '',
+        'show_benefits' => '1', 'show_story' => '1', 'show_quote' => '1',
     ];
 
     public static function validate(array $settings): array
@@ -18,7 +26,7 @@ final class Branding
         if ($result['shop_logo'] !== null && (!is_string($result['shop_logo']) || !ImageUploads::isValidName($result['shop_logo']))) {
             throw new RuntimeException('Choose a valid uploaded shop logo.');
         }
-        foreach (['accent_color', 'background_color', 'text_color'] as $key) {
+        foreach (['accent_color', 'background_color', 'text_color', 'secondary_color'] as $key) {
             if (!is_string($settings[$key] ?? null) || preg_match('/^#[a-fA-F0-9]{6}$/D', $settings[$key]) !== 1) {
                 throw new RuntimeException('Choose valid colours using the colour fields.');
             }
@@ -26,6 +34,18 @@ final class Branding
         }
         if (self::contrast($result['text_color'], $result['background_color']) < 4.5 || self::contrast($result['text_color'], '#ffffff') < 4.5) {
             throw new RuntimeException('Choose a darker text colour and a lighter page background so text stays readable.');
+        }
+        foreach (['announcement_text' => [0, 160], 'hero_title' => [2, 120], 'hero_description' => [2, 300], 'hero_button_text' => [2, 40], 'footer_description' => [0, 300], 'support_email' => [0, 190], 'support_phone' => [0, 30]] as $key => [$min, $max]) {
+            $value = trim((string) ($settings[$key] ?? self::DEFAULTS[$key]));
+            if (mb_strlen($value) < $min || mb_strlen($value) > $max) throw new RuntimeException('Check the length of ' . str_replace('_', ' ', $key) . '.');
+            $result[$key] = $value;
+        }
+        if ($result['support_email'] !== '' && !filter_var($result['support_email'], FILTER_VALIDATE_EMAIL)) throw new RuntimeException('Enter a valid support email.');
+        if ($result['support_phone'] !== '' && preg_match('/^\+?[0-9 ()-]{7,30}$/D', $result['support_phone']) !== 1) throw new RuntimeException('Enter a valid support phone number.');
+        foreach (['heading_font' => ['classic', 'modern', 'rounded'], 'card_style' => ['rounded', 'square'], 'catalogue_columns' => ['3', '4'], 'show_benefits' => ['0', '1'], 'show_story' => ['0', '1'], 'show_quote' => ['0', '1']] as $key => $allowed) {
+            $value = (string) ($settings[$key] ?? self::DEFAULTS[$key]);
+            if (!in_array($value, $allowed, true)) throw new RuntimeException('Choose a valid ' . str_replace('_', ' ', $key) . '.');
+            $result[$key] = $value;
         }
         return $result;
     }
@@ -65,6 +85,7 @@ final class Branding
         $onAccent = self::contrast($accent, '#ffffff') > self::contrast($accent, '#0b1821') ? '#ffffff' : '#0b1821';
         return ['--lime' => $accent, '--lime-deep' => $link, '--paper' => $background, '--ink' => $ink,
             '--cream' => self::mix($background, $ink, 0.04), '--ink-soft' => self::mix($ink, '#ffffff', 0.15),
-            '--on-accent' => $onAccent];
+            '--on-accent' => $onAccent, '--violet' => $settings['secondary_color'] ?? self::DEFAULTS['secondary_color'],
+            '--display' => match ($settings['heading_font'] ?? 'classic') { 'modern' => 'Arial, Helvetica, sans-serif', 'rounded' => 'Verdana, Geneva, sans-serif', default => 'Georgia, serif' }];
     }
 }

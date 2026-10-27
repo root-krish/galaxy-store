@@ -7,6 +7,7 @@ declare(strict_types=1);
  */
 final class Store
 {
+    use AdminOperations;
     public function __construct(private readonly string $path)
     {
         $directory = dirname($this->path);
@@ -90,36 +91,25 @@ final class Store
     private function createAccount(array $attributes, string $role, ?array $actor = null): array
     {
         return $this->write(function (array &$data) use ($attributes, $role, $actor): array {
-            if ($role === 'delivery') {
+            if ($role !== 'customer') {
                 $this->requireAdmin($data, $actor ?? []);
             }
-            $email = mb_strtolower(trim((string) ($attributes['email'] ?? '')));
-            foreach ($data['users'] as $user) {
-                if ($user['email'] === $email) {
-                    throw new RuntimeException('An account already exists for this email address.');
-                }
-            }
-
-            if (mb_strlen(trim((string) ($attributes['name'] ?? ''))) < 2
-                || mb_strlen(trim((string) ($attributes['name'] ?? ''))) > 120
-                || !filter_var($email, FILTER_VALIDATE_EMAIL) || strlen($email) > 190
-                || mb_strlen(trim((string) ($attributes['phone'] ?? ''))) < 7
-                || mb_strlen(trim((string) ($attributes['phone'] ?? ''))) > 30
-                || strlen((string) ($attributes['password'] ?? '')) < 8
-                || strlen((string) ($attributes['password'] ?? '')) > 72) {
-                throw new RuntimeException('Enter a name, valid email, phone number, and a password between 8 and 72 bytes.');
+            $contact = $this->validatedContact($data, $attributes, 0);
+            if (strlen((string) ($attributes['password'] ?? '')) < 8 || strlen((string) ($attributes['password'] ?? '')) > 72) {
+                throw new RuntimeException('Use a password between 8 and 72 bytes.');
             }
             $id = $this->nextId($data['users']);
             $user = [
                 'id' => $id,
-                'name' => trim((string) $attributes['name']),
-                'email' => $email,
-                'phone' => trim((string) $attributes['phone']),
+                'name' => $contact['name'],
+                'email' => $contact['email'],
+                'phone' => $contact['phone'],
                 'role' => $role,
                 'profile_image' => null,
                 'password_hash' => password_hash((string) $attributes['password'], PASSWORD_DEFAULT),
                 'is_active' => true,
                 'created_at' => date('Y-m-d H:i:s'),
+                'created_by' => $actor['id'] ?? null,
             ];
             $data['users'][] = $user;
             $this->notify($data, $id, 'welcome', 'Welcome to ' . ($data['settings']['shop_name'] ?? SG_NAME), 'Your account is ready. Explore the latest sports essentials.');
@@ -163,7 +153,7 @@ final class Store
         return $this->write(function (array &$data) use ($partnerId, $attributes, $actor): array {
             $this->requireAdmin($data, $actor);
             $index = $this->findIndex($data['users'], $partnerId);
-            if ($index === null || $data['users'][$index]['role'] !== 'delivery') {
+            if ($index === null || $data['users'][$index]['role'] !== 'delivery' || !empty($data['users'][$index]['deleted_at'])) {
                 throw new RuntimeException('Delivery partner not found.');
             }
             $contact = $this->validatedContact($data, $attributes, $partnerId);
@@ -173,6 +163,7 @@ final class Store
                     throw new RuntimeException('Use a password between 8 and 72 bytes, or leave it empty to keep the current password.');
                 }
                 $contact['password_hash'] = password_hash($password, PASSWORD_DEFAULT);
+                $contact['auth_version'] = (int) ($data['users'][$index]['auth_version'] ?? 0) + 1;
             }
             $data['users'][$index] = array_replace($data['users'][$index], $contact);
             return $data['users'][$index];
@@ -236,7 +227,8 @@ final class Store
     public function createOrder(array $user, array $cart, array $checkout): array
     {
         return $this->write(function (array &$data) use ($user, $cart, $checkout): array {
-            if (!in_array($user['role'], ['customer', 'delivery'], true) || !$user['is_active']) {
+            $user = $this->findById($data['users'], (int) ($user['id'] ?? 0));
+            if (!$user || !in_array($user['role'], ['customer', 'delivery'], true) || !$user['is_active'] || !empty($user['deleted_at'])) {
                 throw new RuntimeException('A customer or delivery partner account is required to place an order.');
             }
             $cartData = $this->buildCart($data, $cart);
@@ -368,15 +360,16 @@ final class Store
         return array_values($orders);
     }
 
-    public function deliveryPartners(): array
+    public function deliveryPartners(bool $includeInactive = false): array
     {
         $data = $this->read();
-        return array_values(array_filter($data['users'], static fn(array $user): bool => $user['role'] === 'delivery' && $user['is_active']));
+        return array_values(array_filter($data['users'], static fn(array $user): bool => $user['role'] === 'delivery' && ($includeInactive || $user['is_active']) && ($includeInactive || empty($user['deleted_at']))));
     }
 
     public function assignDelivery(int $orderId, int $partnerId, array $actor): array
     {
         return $this->write(function (array &$data) use ($orderId, $partnerId, $actor): array {
+            $this->requireAdmin($data, $actor);
             $orderIndex = $this->findIndex($data['orders'], $orderId);
             $partner = $this->findById($data['users'], $partnerId);
             if ($actor['role'] !== 'admin' || $orderIndex === null || !$partner || !$partner['is_active'] || $partner['role'] !== 'delivery') {
@@ -412,6 +405,9 @@ final class Store
         }
 
         return $this->write(function (array &$data) use ($orderId, $status, $actor, $note, $verificationCode): array {
+            $storedActor = $this->findById($data['users'], (int) ($actor['id'] ?? 0));
+            if (!$storedActor || !$storedActor['is_active'] || !empty($storedActor['deleted_at'])) throw new RuntimeException('Your account is unavailable.');
+            $actor = $storedActor;
             $orderIndex = $this->findIndex($data['orders'], $orderId);
             if ($orderIndex === null) {
                 throw new RuntimeException('Order not found.');
@@ -515,7 +511,7 @@ final class Store
                 'stock' => max(0, (int) $attributes['stock']),
                 'min_stock' => max(1, (int) $attributes['min_stock']),
                 'restock_date' => trim((string) ($attributes['restock_date'] ?? '')) ?: null,
-                'visual' => in_array($attributes['visual'] ?? '', ['⚽', '🏏', '🏀', '🏸', '🎾', '🏃', '🧘', '🏋️', '🥊', '🚴', '🥅'], true) ? $attributes['visual'] : '⚽',
+                'visual' => $this->validatedIcon($attributes['visual'] ?? '⚽'),
                 'image_path' => $imagePath,
                 'featured' => isset($attributes['featured']),
                 'is_active' => true,

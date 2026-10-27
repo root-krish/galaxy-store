@@ -109,7 +109,7 @@ with tempfile.TemporaryDirectory(prefix='galaxy-http-') as directory:
             check('That order record' in courier.request('/?page=invoice&id='+str(order['id']))[1], 'Unassigned courier cannot read invoice')
             admin = Client(base)
             admin.login('admin', 'Admin@123')
-            for tab in ['dashboard', 'products', 'inventory', 'orders', 'finance', 'partners', 'settings']:
+            for tab in ['dashboard', 'products', 'inventory', 'orders', 'finance', 'partners', 'settings', 'categories', 'admins']:
                 check(admin.request('/?page=admin&tab='+tab)[0] == 200, 'Admin tab renders: '+tab)
             admin.post(action='assign_delivery', order_id=order['id'], delivery_partner_id=3, return_page='admin', return_tab='orders')
             check('DELIVERY VERIFICATION CODE' not in courier.request('/?page=invoice&id='+str(order['id']))[1], 'Courier cannot see customer verification code')
@@ -280,6 +280,107 @@ with tempfile.TemporaryDirectory(prefix='galaxy-http-') as directory:
             last = json.loads(data_path.read_text())['orders'][-1]
             check(last['status']=='cancelled' and last['cancellation_reason']==reason, 'Cancellation stores its required reason')
             check(reason in courier.request('/?page=invoice&id='+str(purchase['id']))[1], 'Buyer can see the cancellation reason in order tracking')
+
+            # Admin account provisioning, catalogue organisation, and extended settings.
+            more_admin = dict(action='create_admin', name='Store Manager', email='manager@example.com', phone='9876543210', password='Manager@123', return_page='admin', return_tab='admins')
+            users_before = len(json.loads(data_path.read_text())['users'])
+            guest.post(**more_admin)
+            courier.post(**more_admin)
+            check(len(json.loads(data_path.read_text())['users']) == users_before, 'Only admins can create another admin')
+            admin.post(**more_admin)
+            manager_record = json.loads(data_path.read_text())['users'][-1]
+            check(manager_record['role']=='admin', 'New administrator is persisted with admin role')
+            manager = Client(base)
+            manager.request('/?page=login')
+            check('page=admin' in manager.post(action='login', email='manager@example.com', password='Manager@123')[2], 'Created admin can sign in to portal')
+            check('manager@example.com' in manager.request('/?page=admin&tab=admins')[1], 'Administrator directory renders')
+            admin_contact = dict(action='update_admin_profile', name='Store Manager Updated', email='manager.updated@example.com', phone='9876543211', id=1, role='customer', return_page='profile')
+            guest.post(**admin_contact)
+            check(json.loads(data_path.read_text())['users'][0]['name']=='Aarav Mehta', 'Customer cannot edit admin profile')
+            manager.post(**admin_contact)
+            changed_manager = next(u for u in json.loads(data_path.read_text())['users'] if u['id']==manager_record['id'])
+            check(changed_manager['name']=='Store Manager Updated' and changed_manager['role']=='admin' and json.loads(data_path.read_text())['users'][0]['name']=='Aarav Mehta', 'Admin edits own details without targeting another account or changing role')
+            manager.post(action='logout')
+            manager.request('/?page=login')
+            check('page=admin' in manager.post(action='login', email='manager.updated@example.com', password='Manager@123')[2], 'Admin can sign in using updated email')
+
+            category_fields = dict(action='save_category', name='Swimming', icon='🏊', color='blue', return_page='admin', return_tab='categories')
+            count_categories = len(json.loads(data_path.read_text())['categories'])
+            guest.post(**category_fields)
+            courier.post(**category_fields)
+            check(len(json.loads(data_path.read_text())['categories'])==count_categories, 'Category editor is admin only')
+            manager.upload(category_fields, 'category_photo', 'swimming.png', png)
+            category = json.loads(data_path.read_text())['categories'][-1]
+            check(category['name']=='Swimming' and re.fullmatch(r'[a-f0-9]{32}\.png', category['image_path']) is not None, 'Admin creates category with a photo')
+            home = guest.request('/')[1]
+            check(category['image_path'] in home and 'Swimming' in home, 'New category and photo appear on homepage')
+            check('Swimming' in manager.request('/?page=admin&tab=products&category_id='+str(category['id']))[1], 'New category is available for gear creation')
+            manager.post(**category_fields, id=category['id'], default_photo=1)
+            check(json.loads(data_path.read_text())['categories'][-1]['image_path'] is None, 'Category can return to its icon')
+            check('🏊' in guest.request('/')[1], 'Restored category icon appears in storefront')
+            count_files = len(list(uploads.iterdir()))
+            manager.upload({**category_fields, 'name': ''}, 'category_photo', 'failed.png', png)
+            check(len(list(uploads.iterdir()))==count_files, 'Rejected category cleans up failed upload')
+            gear_fields = {**product_fields, 'id': 0, 'sku': 'SWIM-HTTP-001', 'name': 'Swim Goggles', 'category_id': category['id'], 'visual': '🏊', 'stock': 5}
+            manager.post(**gear_fields)
+            gear = json.loads(data_path.read_text())['products'][-1]
+            check(gear['category_id']==category['id'] and gear['visual']=='🏊', 'Admin can add gear to a new category with a custom icon')
+            check('Swim Goggles' in guest.request('/?page=shop&category='+str(category['id']))[1], 'New gear is visible in its category')
+
+            extended = dict(action='save_branding', hero_title='Ready for your next match', hero_description='New homepage description', hero_button_text='Browse equipment', announcement_text='Weekend gear offers', footer_description='Your local sports specialists', heading_font='modern', card_style='square', catalogue_columns='3', show_benefits='0', show_story='0', show_quote='0', support_email='help@example.com', support_phone='9876543210', secondary_color='#123abc', return_page='admin', return_tab='settings')
+            manager.post(**extended)
+            home = guest.request('/')[1]
+            check('Ready for your next match' in home and 'Weekend gear offers' in home and 'Browse equipment' in home, 'Homepage content customization is rendered')
+            check('benefit-strip' not in home and 'story-panel' not in home and 'quote-strip' not in home, 'Homepage section visibility settings work')
+            check('cards-square catalogue-cols-3' in home and 'Arial, Helvetica, sans-serif' in home and '--violet:#123abc' in home, 'Layout, font, and secondary colour apply')
+            check('mailto:help@example.com' in home and 'tel:9876543210' in home, 'Public contact links appear in footer')
+            manager.post(**{**extended, 'hero_title': '<script>alert(1)</script>'})
+            check('&lt;script&gt;alert(1)&lt;/script&gt;' in guest.request('/')[1], 'Custom homepage text is escaped')
+            manager.post(action='reset_branding', return_page='admin', return_tab='settings')
+            check('story-panel' in guest.request('/')[1], 'Reset restores default homepage sections')
+
+            # Blocking revokes existing sessions, releases jobs, and preserves order records.
+            access = dict(action='manage_delivery_partner', partner_id=3, operation='block', reason='Repeated missed delivery commitments', return_page='admin', return_tab='partners')
+            guest.post(**access)
+            check(json.loads(data_path.read_text())['users'][2]['is_active'], 'Customer cannot block a partner')
+            manager.post(**{**access, 'reason': '  '})
+            check(json.loads(data_path.read_text())['users'][2]['is_active'], 'Partner blocking requires a proper reason')
+            active_order = guest.post(action='add_to_cart', product_id=6, quantity=1, return_page='cart')
+            guest.post(action='checkout', recipient='HTTP Account Test', phone='9876543210', address='Account Test Road', city='Kolkata', postal_code='700001', payment_method='cod', return_page='checkout')
+            to_reassign = json.loads(data_path.read_text())['orders'][-1]
+            manager.post(action='assign_delivery', order_id=to_reassign['id'], delivery_partner_id=3, return_page='admin', return_tab='orders')
+            manager.post(**access)
+            blocked = json.loads(data_path.read_text())['users'][2]
+            reassigned = json.loads(data_path.read_text())['orders'][-1]
+            check(not blocked['is_active'] and blocked['account_events'][-1]['reason']==access['reason'], 'Admin blocks partner and saves reason')
+            check(reassigned['status']=='packed' and reassigned['delivery_partner_id'] is None, 'Partner blocking returns active jobs for reassignment')
+            check('page=login' in courier.request('/?page=delivery')[2], 'Blocked partner session loses access immediately')
+            manager.post(**{**access, 'operation': 'restore', 'reason': 'Review completed and approved'})
+            check('page=login' in courier.request('/?page=delivery')[2], 'Restoring account does not reactivate old sessions')
+            check('page=delivery' in courier.login('delivery', 'Delivery@123')[2], 'Restored partner can sign in again')
+            manager.post(**{**access, 'operation': 'delete', 'reason': 'Partner has left the delivery team'})
+            deleted = json.loads(data_path.read_text())['users'][2]
+            check(deleted['deleted_at'] and not deleted['is_active'], 'Admin can delete partner account with reason')
+            check('page=login' in courier.request('/?page=delivery')[2], 'Deleted partner session cannot access delivery workspace')
+            manager.post(**{**access, 'operation': 'restore', 'reason': 'Attempt to restore deleted account'})
+            check(not json.loads(data_path.read_text())['users'][2]['is_active'], 'Deleted account cannot be restored')
+            check(guest.request('/?page=invoice&id=1')[0]==200, 'Historical invoice remains accessible after partner deletion')
+            orders_body = manager.request('/?page=admin&tab=orders')[1]
+            check('order-command-card' in orders_body and 'order-filter-tabs' in orders_body and 'order-search-form' in orders_body, 'Modern order command controls render')
+            packed_body = manager.request('/?page=admin&tab=orders&order_status=packed')[1]
+            check('data-order-id="'+str(to_reassign['id'])+'"' in packed_body and 'data-order-id="1"' not in packed_body, 'Order status filtering returns matching cards')
+            empty_body = manager.request('/?page=admin&tab=orders&order_q=no-such-order-abc')[1]
+            check('No orders match these filters' in empty_body and 'class="order-command-card"' not in empty_body, 'Order search provides a clear empty state')
+
+            other_manager_session = Client(base)
+            other_manager_session.request('/?page=login')
+            other_manager_session.post(action='login', email='manager.updated@example.com', password='Manager@123')
+            _, profile_body, profile_url = manager.post(**admin_contact, password='ManagerChanged@123', current_password='Manager@123')
+            check('page=profile' in profile_url and 'Store Manager Updated' in profile_body, 'Admin password change keeps current session active')
+            check('page=login' in other_manager_session.request('/?page=admin')[2], 'Admin password change revokes other sessions')
+            other_manager_session.request('/?page=login')
+            check('page=login' in other_manager_session.post(action='login', email='manager.updated@example.com', password='Manager@123')[2], 'Previous admin password no longer signs in')
+            check('page=admin' in other_manager_session.post(action='login', email='manager.updated@example.com', password='ManagerChanged@123')[2], 'New admin password signs in successfully')
 
             print(f'Passed {checks} HTTP checks.')
         finally:

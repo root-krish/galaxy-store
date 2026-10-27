@@ -16,13 +16,9 @@ function render_header(string $title, string $page): void
     <link rel="stylesheet" href="assets/css/app.css">
     <style data-store-theme>:root {<?php foreach (Branding::cssVariables(shop_settings()) as $key => $value): ?><?= h($key) ?>:<?= h($value) ?>;<?php endforeach; ?>}</style>
 </head>
-<body>
+<body class="cards-<?= h(shop_settings()['card_style']) ?> catalogue-cols-<?= h(shop_settings()['catalogue_columns']) ?>">
 <div class="site-shell">
-    <div class="announcement">
-        <span class="announce-dot"></span>
-        Free express delivery above ₹999 <span class="announcement-separator">·</span> Use <strong>GALAXY10</strong> for 10% off
-        <span class="announcement-right">Secure checkout <span aria-hidden="true">✦</span> Live order tracking</span>
-    </div>
+    <?php if (shop_settings()['announcement_text'] !== ''): ?><div class="announcement"><span class="announce-dot"></span><span><?= h(shop_settings()['announcement_text']) ?></span><span class="announcement-right">Secure checkout ✦ Live order tracking</span></div><?php endif; ?>
     <header class="site-header">
         <div class="nav-wrap">
             <a class="brand" href="<?= h(url('home')) ?>" aria-label="<?= h(shop_name()) ?> home">
@@ -34,7 +30,7 @@ function render_header(string $title, string $page): void
             <nav class="main-nav" data-main-nav>
                 <a class="<?= $page === 'home' ? 'active' : '' ?>" href="<?= h(url('home')) ?>">Home</a>
                 <a class="<?= $page === 'shop' ? 'active' : '' ?>" href="<?= h(url('shop')) ?>">Shop</a>
-                <a href="<?= h(url('home')) ?>#why-galaxy">Why Galaxy</a>
+                <?php if (shop_settings()['show_story'] === '1'): ?><a href="<?= h(url('home')) ?>#why-galaxy">Why Galaxy</a><?php endif; ?>
                 <?php if ($user && can_shop($user)): ?>
                     <a class="<?= $page === 'account' ? 'active' : '' ?>" href="<?= h(url('account')) ?>">My orders</a>
                 <?php endif; ?>
@@ -49,7 +45,7 @@ function render_header(string $title, string $page): void
                 </a>
                 <?php if ($user): ?>
                     <?php $workspace = $user['role'] === 'admin' ? 'admin' : ($user['role'] === 'delivery' ? 'delivery' : 'account'); ?>
-                    <a class="user-link" href="<?= h(url($workspace)) ?>">
+                    <a class="user-link" href="<?= h(url($workspace)) ?>" aria-label="<?= h($user['name']) ?> workspace">
                         <span class="avatar"><?= avatar_content($user) ?></span>
                         <span class="user-link-copy"><small><?= h(ucfirst($user['role'])) ?></small><?= h(explode(' ', $user['name'])[0]) ?></span>
                     </a>
@@ -91,20 +87,21 @@ function render_footer(): void
                 <a class="brand" href="<?= h(url('home')) ?>">
                     <?= brand_markup() ?>
                 </a>
-                <p>Curated gear for the way you play. Built for every first serve, final sprint, and weekend win.</p>
+                <p><?= h(shop_settings()['footer_description']) ?></p>
                 <div class="social-row"><span>◎</span><span>◌</span><span>◈</span></div>
             </div>
             <div>
                 <h3>Explore</h3>
                 <a href="<?= h(url('shop')) ?>">All equipment</a>
-                <a href="<?= h(url('shop', ['category' => 1])) ?>">Team sports</a>
-                <a href="<?= h(url('shop', ['category' => 3])) ?>">Fitness</a>
+                <?php foreach (array_slice(store()->categories(), 0, 2) as $category): ?><a href="<?= h(url('shop', ['category' => $category['id']])) ?>"><?= h($category['name']) ?></a><?php endforeach; ?>
             </div>
             <div>
                 <h3>Service</h3>
+                <?php if (shop_settings()['support_email'] !== ''): ?><a href="mailto:<?= h(shop_settings()['support_email']) ?>"><?= h(shop_settings()['support_email']) ?></a><?php endif; ?>
+                <?php if (shop_settings()['support_phone'] !== ''): ?><a href="tel:<?= h(preg_replace('/[^+0-9]/', '', shop_settings()['support_phone'])) ?>"><?= h(shop_settings()['support_phone']) ?></a><?php endif; ?>
                 <a href="<?= h(url('cart')) ?>">Your cart</a>
                 <a href="<?= h(url('login')) ?>">Order tracking</a>
-                <a href="<?= h(url('home')) ?>#why-galaxy">Delivery promise</a>
+                <?php if (shop_settings()['show_story'] === '1'): ?><a href="<?= h(url('home')) ?>#why-galaxy">Delivery promise</a><?php endif; ?>
             </div>
             <div class="newsletter">
                 <h3>Your next game</h3>
@@ -195,10 +192,10 @@ function render_home(): void
     <section class="hero">
         <div class="hero-content">
             <div class="hero-kicker"><span class="pulse-ring"></span> THE SEASON IS YOURS</div>
-            <h1>Find your <em>game.</em><br>Own your <span>orbit.</span></h1>
-            <p>Thoughtfully selected sport essentials, delivered with the kind of speed that keeps your momentum moving.</p>
+            <?php if (shop_settings()['hero_title'] === Branding::DEFAULTS['hero_title']): ?><h1>Find your <em>game.</em><br>Own your <span>orbit.</span></h1><?php else: ?><h1 class="custom-hero-title"><?= h(shop_settings()['hero_title']) ?></h1><?php endif; ?>
+            <p><?= h(shop_settings()['hero_description']) ?></p>
             <div class="hero-actions">
-                <a class="button button-primary button-large" href="<?= h(url('shop')) ?>">Shop the collection <span>→</span></a>
+                <a class="button button-primary button-large" href="<?= h(url('shop')) ?>"><?= h(shop_settings()['hero_button_text']) ?> <span>→</span></a>
                 <a class="button button-ghost button-large" href="#featured-products"><span class="play-mark">▶</span> See what’s new</a>
             </div>
             <div class="hero-proof">
@@ -220,19 +217,19 @@ function render_home(): void
         <div class="hero-scroll">SCROLL TO EXPLORE <span>↓</span></div>
     </section>
 
-    <section class="benefit-strip">
+    <?php if (shop_settings()['show_benefits'] === '1'): ?><section class="benefit-strip">
         <div><span class="benefit-icon">✦</span><p><strong>Authentic equipment</strong><small>From trusted sport brands</small></p></div>
         <div><span class="benefit-icon">↗</span><p><strong>Quick dispatch</strong><small>Orders packed in 48 hours</small></p></div>
         <div><span class="benefit-icon">◈</span><p><strong>Secure payments</strong><small>COD, card and UPI options</small></p></div>
         <div><span class="benefit-icon">⌁</span><p><strong>Always in the loop</strong><small>Track every delivery step</small></p></div>
     </section>
 
-    <section class="content-section categories-section">
+    <?php endif; ?><section class="content-section categories-section">
         <?php render_section_heading('PICK YOUR PLAYGROUND', 'Whatever moves you.', 'A compact collection of serious equipment for everyday players.', url('shop'), 'Explore all gear'); ?>
         <div class="category-grid">
             <?php foreach ($categories as $category): ?>
                 <a class="category-card category-<?= h($category['color']) ?>" href="<?= h(url('shop', ['category' => $category['id']])) ?>">
-                    <span class="category-icon"><?= h($category['icon']) ?></span>
+                    <span class="category-icon"><?= category_visual($category) ?></span>
                     <span><strong><?= h($category['name']) ?></strong><small>Shop now <i>→</i></small></span>
                     <span class="category-spark">✦</span>
                 </a>
@@ -247,7 +244,7 @@ function render_home(): void
         </div>
     </section>
 
-    <section class="story-panel" id="why-galaxy">
+    <?php if (shop_settings()['show_story'] === '1'): ?><section class="story-panel" id="why-galaxy">
         <div class="story-content">
             <p class="eyebrow">THE GALAXY STANDARD</p>
             <h2>Less time hunting for kit.<br><em>More time playing.</em></h2>
@@ -255,18 +252,19 @@ function render_home(): void
             <a class="text-link text-link-light" href="<?= h(url('shop')) ?>">Meet your next essential <span>→</span></a>
         </div>
         <div class="story-stats">
-            <div><strong>5</strong><span>sports<br>categories</span></div>
+            <div><strong><?= count($categories) ?></strong><span>sports<br>categories</span></div>
             <div><strong>48h</strong><span>dispatch<br>promise</span></div>
             <div><strong>100%</strong><span>stock<br>visibility</span></div>
         </div>
         <div class="story-orb"><span>✦</span></div>
     </section>
 
-    <section class="quote-strip">
+    <?php endif; ?><?php if (shop_settings()['show_quote'] === '1'): ?><section class="quote-strip">
         <span class="quote-mark">“</span>
         <p>Sport isn’t just what you play. It’s how you show up.</p>
         <span class="quote-star">✦</span>
     </section>
+    <?php endif; ?>
     <?php
 }
 
@@ -605,7 +603,7 @@ function render_invoice_page(array $order, bool $track = false): void
 function render_admin_page(array $user): void
 {
     $tab = $_GET['tab'] ?? 'dashboard';
-    $allowedTabs = ['dashboard', 'products', 'inventory', 'orders', 'finance', 'partners', 'settings'];
+    $allowedTabs = ['dashboard', 'products', 'categories', 'inventory', 'orders', 'finance', 'partners', 'admins', 'settings'];
     $tab = in_array($tab, $allowedTabs, true) ? $tab : 'dashboard';
     $stats = store()->dashboardStats();
     $orders = store()->allOrders();
@@ -623,9 +621,11 @@ function render_admin_page(array $user): void
             <nav>
                 <a class="<?= $tab === 'dashboard' ? 'active' : '' ?>" href="<?= h(url('admin', ['tab' => 'dashboard'])) ?>"><span>▦</span> Overview</a>
                 <a class="<?= $tab === 'products' ? 'active' : '' ?>" href="<?= h(url('admin', ['tab' => 'products'])) ?>"><span>◈</span> Products</a>
+                <a class="<?= $tab === 'categories' ? 'active' : '' ?>" href="<?= h(url('admin', ['tab' => 'categories'])) ?>"><span>▧</span> Categories &amp; gear</a>
                 <a class="<?= $tab === 'inventory' ? 'active' : '' ?>" href="<?= h(url('admin', ['tab' => 'inventory'])) ?>"><span>⌑</span> Inventory <?php if ($stats['low_stock']): ?><b><?= count($stats['low_stock']) ?></b><?php endif; ?></a>
                 <a class="<?= $tab === 'orders' ? 'active' : '' ?>" href="<?= h(url('admin', ['tab' => 'orders'])) ?>"><span>↗</span> Orders</a>
                 <a class="<?= $tab === 'partners' ? 'active' : '' ?>" href="<?= h(url('admin', ['tab' => 'partners'])) ?>"><span>♙</span> Delivery team</a>
+                <a class="<?= $tab === 'admins' ? 'active' : '' ?>" href="<?= h(url('admin', ['tab' => 'admins'])) ?>"><span>♧</span> Administrators</a>
                 <a class="<?= $tab === 'finance' ? 'active' : '' ?>" href="<?= h(url('admin', ['tab' => 'finance'])) ?>"><span>◒</span> Finance</a>
                 <a class="<?= $tab === 'settings' ? 'active' : '' ?>" href="<?= h(url('admin', ['tab' => 'settings'])) ?>"><span>⚙</span> Store settings</a>
             </nav>
@@ -659,13 +659,13 @@ function render_admin_page(array $user): void
                             <label>Product name<input required name="name" value="<?= h($editingProduct['name'] ?? '') ?>" placeholder="e.g. Pro training football"></label>
                             <label>SKU<input required name="sku" value="<?= h($editingProduct['sku'] ?? '') ?>" placeholder="SG-FB-001"></label>
                             <label>Brand<input required name="brand" value="<?= h($editingProduct['brand'] ?? '') ?>" placeholder="Brand name"></label>
-                            <label>Category<select name="category_id"><?php foreach (store()->categories() as $category): ?><option value="<?= (int) $category['id'] ?>" <?= (int) ($editingProduct['category_id'] ?? 1) === (int) $category['id'] ? 'selected' : '' ?>><?= h($category['name']) ?></option><?php endforeach; ?></select></label>
+                            <label>Category<select name="category_id"><?php foreach (store()->categories() as $category): ?><option value="<?= (int) $category['id'] ?>" <?= (int) ($editingProduct['category_id'] ?? ($_GET['category_id'] ?? 1)) === (int) $category['id'] ? 'selected' : '' ?>><?= h($category['name']) ?></option><?php endforeach; ?></select></label>
                             <label>Selling price<input required type="number" min="0" step="0.01" name="price" value="<?= h($editingProduct['price'] ?? '') ?>" placeholder="0.00"></label>
                             <label>Unit cost<input required type="number" min="0" step="0.01" name="cost" value="<?= h($editingProduct['cost'] ?? '') ?>" placeholder="0.00"></label>
                             <label>Current stock<input required type="number" min="0" name="stock" value="<?= h($editingProduct['stock'] ?? '0') ?>"></label>
                             <label>Low-stock threshold<input required type="number" min="1" name="min_stock" value="<?= h($editingProduct['min_stock'] ?? '5') ?>"></label>
                             <label>Expected restock<input type="date" name="restock_date" value="<?= h($editingProduct['restock_date'] ?? '') ?>"></label>
-                            <label>Product icon<select name="visual"><?php foreach (['⚽','🏏','🏀','🏸','🎾','🏃','🧘','🏋️','🥊','🚴','🥅'] as $visual): ?><option value="<?= h($visual) ?>" <?= ($editingProduct['visual'] ?? '⚽') === $visual ? 'selected' : '' ?>><?= h($visual) ?> Gear</option><?php endforeach; ?></select></label>
+                            <label>Product icon or emoji<input name="visual" required maxlength="16" value="<?= h($editingProduct['visual'] ?? '⚽') ?>" placeholder="e.g. 🏊"></label>
                             <label class="wide">Description<textarea required name="description" rows="2" placeholder="A short helpful product description"><?= h($editingProduct['description'] ?? '') ?></textarea></label>
                         </div>
                         <div class="product-photo-editor">
@@ -681,8 +681,11 @@ function render_admin_page(array $user): void
                 <div class="workspace-content-head"><div><p class="eyebrow">STOCK CONTROL</p><h2>Keep every shelf in orbit.</h2></div><span class="inventory-key"><i></i> Below reorder threshold = attention</span></div>
                 <section class="admin-card inventory-table-card"><div class="admin-card-head"><div><p class="eyebrow">LIVE INVENTORY</p><h3>Receive stock or record an adjustment.</h3></div><span class="table-hint">Each change is logged</span></div><div class="inventory-list"><?php foreach ($products as $product): ?><article class="inventory-row"><div class="inventory-product"><span class="mini-product-art art-<?= (int) $product['category_id'] ?>"><?= product_visual($product) ?></span><div><strong><?= h($product['name']) ?></strong><a class="table-action" href="<?= h(url('admin', ['tab' => 'products', 'edit' => $product['id']])) ?>">Edit item &amp; photo</a><small><?= h($product['sku']) ?> · Reorder at <?= (int) $product['min_stock'] ?></small></div></div><div class="stock-meter-wrap"><div class="stock-number <?= $product['stock'] < $product['min_stock'] ? 'low' : '' ?>"><?= (int) $product['stock'] ?><small>units</small></div><div class="stock-meter"><i style="width: <?= min(100, max(6, ($product['stock'] / max(1, $product['min_stock'] * 3)) * 100)) ?>%"></i></div></div><form method="post" class="inventory-adjust-form"><?= csrf_field() ?><input type="hidden" name="action" value="adjust_stock"><input type="hidden" name="return_page" value="admin"><input type="hidden" name="return_tab" value="inventory"><input type="hidden" name="product_id" value="<?= (int) $product['id'] ?>"><input type="number" name="delta" value="1" min="-<?= (int) $product['stock'] ?>" max="999" aria-label="Quantity change for <?= h($product['name']) ?>"><input name="note" placeholder="Reason (optional)" aria-label="Adjustment note"><button class="button button-small button-dark" type="submit">Apply</button></form></article><?php endforeach; ?></div></section>
             <?php elseif ($tab === 'orders'): ?>
-                <div class="workspace-content-head"><div><p class="eyebrow">ORDER COMMAND</p><h2>From checkout to doorstep.</h2></div><span class="date-chip"><?= count($orders) ?> order<?= count($orders) === 1 ? '' : 's' ?></span></div>
-                <section class="admin-card orders-management-card"><div class="table-scroll"><table class="admin-table orders-table"><thead><tr><th>Order</th><th>Customer</th><th>Items</th><th>Total</th><th>Delivery</th><th>Status</th><th></th></tr></thead><tbody><?php foreach ($orders as $order): ?><tr><td><strong><?= h($order['number']) ?></strong><small><?= h(format_date($order['created_at'], 'd M, h:i A')) ?></small></td><td><strong><?= h($order['customer_name']) ?></strong><small><?= h($order['address']['city']) ?></small></td><td><?= count($order['lines']) ?> item<?= count($order['lines']) === 1 ? '' : 's' ?></td><td><strong><?= money((float) $order['grand_total']) ?></strong><small><?= h(strtoupper($order['payment_method'])) ?> · <?= h($order['payment_status']) ?></small></td><td><form method="post" class="inline-select-form"><?= csrf_field() ?><input type="hidden" name="action" value="assign_delivery"><input type="hidden" name="return_page" value="admin"><input type="hidden" name="return_tab" value="orders"><input type="hidden" name="order_id" value="<?= (int) $order['id'] ?>"><select name="delivery_partner_id" aria-label="Assign delivery partner" <?= !in_array($order['status'], ['placed', 'confirmed', 'packed', 'assigned'], true) ? 'disabled' : '' ?>><option value="">Choose partner</option><?php foreach ($partners as $partner): if ((int) $partner['id'] === (int) $order['user_id']) continue; ?><option value="<?= (int) $partner['id'] ?>" <?= (int) $order['delivery_partner_id'] === (int) $partner['id'] ? 'selected' : '' ?>><?= h(explode(' ', $partner['name'])[0]) ?></option><?php endforeach; ?></select><button class="table-action" type="submit" <?= !in_array($order['status'], ['placed', 'confirmed', 'packed', 'assigned'], true) ? 'disabled' : '' ?>>Assign</button></form></td><td><span class="status-pill <?= h(status_tone($order['status'])) ?>"><?= h(status_label($order['status'])) ?></span></td><td><?php render_order_actions($order); ?></td></tr><?php endforeach; ?></tbody></table></div></section>
+                <?php render_order_command($orders, $partners); ?>
+            <?php elseif ($tab === 'categories'): ?>
+                <?php render_categories_admin(); ?>
+            <?php elseif ($tab === 'admins'): ?>
+                <?php render_administrators_admin(); ?>
             <?php elseif ($tab === 'settings'): ?>
                 <?php render_branding_settings(); ?>
             <?php elseif ($tab === 'partners'): ?>

@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/app/bootstrap.php';
 require_once __DIR__ . '/app/views.php';
 require_once __DIR__ . '/app/features.php';
+require_once __DIR__ . '/app/admin.php';
 
 if (($_GET['page'] ?? '') === 'media' && in_array($_SERVER['REQUEST_METHOD'], ['GET', 'HEAD'], true)) {
     image_uploads()->serve(is_string($_GET['image'] ?? null) ? $_GET['image'] : '');
@@ -170,6 +171,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $product = store()->adjustStock((int) ($_POST['product_id'] ?? 0), $delta, (string) ($_POST['note'] ?? ''), $actor);
                 flash('success', $product['name'] . ' now has ' . $product['stock'] . ' unit(s) in stock.');
                 post_return_page('admin');
+
+            case 'save_category':
+                $actor = require_role('admin');
+                $attributes = $_POST;
+                unset($attributes['image_path']);
+                $uploadedImage = image_uploads()->receive('category_photo');
+                if ($uploadedImage !== null) $attributes['image_path'] = $uploadedImage;
+                elseif (isset($_POST['default_photo'])) $attributes['image_path'] = null;
+                store()->saveCategory($attributes, $actor);
+                flash('success', 'Category saved. You can now add gear to this category.');
+                redirect('admin', ['tab' => 'categories']);
+
+            case 'update_admin_profile':
+                $actor = require_role('admin');
+                $updated = store()->updateAdminProfile($_POST, $actor);
+                $_SESSION['auth_version'] = (int) ($updated['auth_version'] ?? 0);
+                flash('success', 'Your administrator profile has been updated.');
+                redirect('profile');
+
+            case 'create_admin':
+                $actor = require_role('admin');
+                store()->createAdministrator($_POST, $actor);
+                flash('success', 'New administrator account created.');
+                redirect('admin', ['tab' => 'admins']);
+
+            case 'manage_delivery_partner':
+                $actor = require_role('admin');
+                store()->manageDeliveryPartner((int) ($_POST['partner_id'] ?? 0), (string) ($_POST['operation'] ?? ''), (string) ($_POST['reason'] ?? ''), $actor);
+                flash('success', 'Partner account updated. Any active deliveries are ready for reassignment.');
+                redirect('admin', ['tab' => 'partners']);
 
             case 'update_customer_profile':
                 $actor = require_role('customer');

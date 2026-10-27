@@ -38,7 +38,7 @@ COD, UPI, card payments, and prepaid refunds are **simulated**. No payment gatew
 
 ## Admin and delivery journey
 
-Administrators can add or edit products, record stock adjustments, set individual reorder thresholds and expected restock dates, assign orders, pack orders, cancel open orders, and record operating expenses. Inventory changes are logged. Cancelling an order requires a non-empty reason (up to 500 characters), saved in its timeline for the buyer to see. It restores stock exactly once and marks a simulated prepaid payment refunded.
+Administrators can create and edit categories with icons or photos, add or edit products, record stock adjustments, set individual reorder thresholds and expected restock dates, assign orders, pack orders, cancel open orders, and record operating expenses. Inventory changes are logged. Cancelling an order requires a non-empty reason (up to 500 characters), saved in its timeline for the buyer to see. It restores stock exactly once and marks a simulated prepaid payment refunded.
 
 The dashboard shows actual daily sales, seven days of sales, popular products, low-stock alerts, and monthly profit. Sales include open and completed orders but exclude cancellations. Net profit uses item sales after discounts, plus external income, less historical item costs and operating expenses; GST and delivery charges are excluded. These are order-based project metrics, not payment settlement or accounting reports.
 
@@ -56,11 +56,14 @@ For Apache, enable `mod_rewrite`, allow the supplied access rules, and use PHP 8
 
 ## Accounts, photos, and external income
 
-- Admin → Delivery team: create a delivery partner with a name, email, phone, and initial password. Use Edit details on an existing partner to change their name, email, phone, or optionally reset their password. Only admins can change these partner details. Public registration always creates customers, even if a staff role is submitted.
+- Admin → Categories & gear: create or edit category names, icons, tile colours, and photos. Add gear opens the product editor with the category selected. Products accept a custom icon or emoji, or an uploaded photo. Categories appear immediately on the homepage and in catalogue filters.
+- Admin → Administrators: an existing admin can create another admin with full portal access. Public registration cannot create admins. Each admin can update their own name, email, and phone in Profile; changing a password requires the current password.
+- Admin → Orders: use status filters and search by order, customer, phone, city, or item. Each order card separates delivery assignment from the next order action and includes expandable item details and tracking.
+- Admin → Delivery team: create a delivery partner with a name, email, phone, and initial password. Use Edit details on an existing partner to change their name, email, phone, or optionally reset their password. Only admins can change these partner details. Manage account access can block, restore, or delete a partner with a required reason of 5–500 characters. Each action records its reason, time, and administrator. Blocking or deleting immediately revokes existing sessions and returns active deliveries to packed for reassignment, without changing stock or payment. Deleted accounts cannot sign in or be restored; their records remain for order and audit history. Restoring a blocked account requires a fresh sign-in. Public registration always creates customers, even if a staff role is submitted.
 - Admin → Finance: use Add external income for sponsorship, other earnings, or external profit. Income has its own dated ledger and increases profit for that month, without inflating product sales.
 - Admin → Products: upload or replace a product photo, keep the existing icon by leaving the file empty, or select the default option to remove a custom photo. Inventory also links to the item photo editor.
-- Profile in the navigation: customers can update their own name, email, and phone. The updated email becomes their sign-in address. Customers, administrators, and delivery partners can upload, replace, or reset their own photo. Initials remain the default.
-- Admin → Store settings: change the shop name, upload or reset its logo, and choose accent, page background, and text colours. Settings apply throughout the site and receipts. Choose a light background and dark text; unreadable combinations are rejected. Restore defaults resets branding without changing finance settings. Existing stores receive default branding automatically.
+- Profile in the navigation: customers and administrators can update their own name, email, and phone. The updated email becomes their sign-in address. Customers, administrators, and delivery partners can upload, replace, or reset their own photo. Initials remain the default.
+- Admin → Store settings: change the shop name, upload or reset its logo, and choose accent, page background, and text colours. Settings apply throughout the site and receipts. Choose a light background and dark text; unreadable combinations are rejected. Additional options include the announcement, homepage heading and description, shop button text, footer description, support contact links, secondary colour, heading font, product card corners, desktop product columns, and homepage section visibility. Restore defaults resets all website options without changing finance settings. Existing stores receive default branding automatically.
 - Photos accept JPG, PNG, and WebP, up to 2 MB and 4096 × 4096 pixels. Files are checked on the server, assigned random names, and stored privately. They are served as images through the application. SVG and executable files are not accepted.
 - Set SG_UPLOAD_PATH to an absolute directory to store photos outside the project. Back up the upload directory alongside the JSON file. Historical product photos remain available for existing receipts when an image is replaced.
 
@@ -71,12 +74,13 @@ Run the regression checks from the project directory:
 ```sh
 php tests/store.php
 php tests/features.php
+php tests/admin.php
 python3 tests/test_http.py
 ```
 
 Optional browser checks require Node 22+ and installed Google Chrome: run node tests/browser.mjs. Set CHROME_BINARY if Chrome uses another executable name. These checks use temporary data and uploads.
 
-The store suite checks totals, stock rollback, cancellation, verification codes, permissions, validation, and reporting. The HTTP suite starts its own PHP server on an available port with temporary data and tests registration, CSRF, private-file protection, role access, checkout, all admin tabs, and verified delivery. Python 3 is needed only for that test suite. Neither suite modifies the running demo's data.
+The administrator suite checks account provisioning, profile edits, partner access and audit history, reassignment, category management, and website settings. The store suite checks totals, stock rollback, cancellation, verification codes, permissions, validation, and reporting. The HTTP suite starts its own PHP server on an available port with temporary data and tests registration, CSRF, private-file protection, role access, checkout, all admin tabs, and verified delivery. Python 3 is needed only for that test suite. Neither suite modifies the running demo's data.
 
 ## Team and licence
 

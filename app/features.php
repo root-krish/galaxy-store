@@ -39,11 +39,14 @@ function render_profile_page(array $user): void
     <section class="page-intro compact-intro"><p class="eyebrow">YOUR PROFILE</p><h1>Make it yours.</h1><p>Your photo appears in your account and workspace.</p></section>
     <section class="content-section profile-settings">
         <div class="profile-card"><span class="avatar avatar-large"><?= avatar_content($user) ?></span><div><strong><?= h($user['name']) ?></strong><p><?= h($user['email']) ?><br><?= h($user['phone']) ?></p></div><span class="profile-safe"><?= h(ucfirst($user['role'])) ?></span></div>
-        <?php if ($user['role'] === 'customer'): ?>
+        <?php if (in_array($user['role'], ['customer', 'admin'], true)): ?>
             <form method="post" class="stacked-form contact-settings-form">
-                <?= csrf_field() ?><input type="hidden" name="action" value="update_customer_profile"><input type="hidden" name="return_page" value="profile">
+                <?= csrf_field() ?><input type="hidden" name="action" value="<?= $user['role'] === 'admin' ? 'update_admin_profile' : 'update_customer_profile' ?>"><input type="hidden" name="return_page" value="profile">
                 <h2>Contact details</h2>
                 <?php render_contact_fields($user); ?>
+                <?php if ($user['role'] === 'admin'): ?>
+                    <details class="password-change"><summary>Change password (optional)</summary><label>Current password<input type="password" name="current_password" autocomplete="current-password"></label><label>New password<input type="password" name="password" minlength="8" maxlength="72" autocomplete="new-password"></label></details>
+                <?php endif; ?>
                 <button class="button button-primary" type="submit">Save contact details</button>
             </form>
         <?php elseif ($user['role'] === 'delivery'): ?>
@@ -73,7 +76,7 @@ function render_contact_fields(array $user): void
 function render_delivery_partners_admin(array $partners): void
 {
     $editing = isset($_GET['edit_partner']) ? store()->user((int) $_GET['edit_partner']) : null;
-    $editing = $editing && $editing['role'] === 'delivery' ? $editing : null;
+    $editing = $editing && $editing['role'] === 'delivery' && empty($editing['deleted_at']) ? $editing : null;
     ?>
     <div class="workspace-content-head"><div><p class="eyebrow">DELIVERY TEAM</p><h2><?= $editing ? 'Edit partner details.' : 'Create a partner account.' ?></h2><p>Only administrators can create delivery accounts or change partner contact details.</p></div><a class="button button-ghost" href="<?= h(url('admin', ['tab' => 'partners'])) ?>">+ New partner</a></div>
     <div class="admin-main-grid lower-grid">
@@ -89,12 +92,11 @@ function render_delivery_partners_admin(array $partners): void
                 <button class="button button-primary" type="submit"><?= $editing ? 'Save partner details' : 'Create delivery partner' ?></button>
             </form>
         </section>
-        <section class="admin-card"><p class="eyebrow">ACTIVE PARTNERS</p><h3>Your delivery team.</h3>
+        <section class="admin-card"><p class="eyebrow">PARTNER ACCOUNTS</p><h3>Your delivery team.</h3>
+            <p class="quiet-copy">Blocked accounts can be restored. Deleted accounts lose access permanently; order history is retained. Active jobs return to Orders for reassignment.</p>
             <div class="partner-list">
-                <?php foreach ($partners as $partner): ?>
-                    <div class="profile-card"><span class="avatar"><?= avatar_content($partner) ?></span><div><strong><?= h($partner['name']) ?></strong><p><?= h($partner['email']) ?><br><?= h($partner['phone']) ?></p><a class="text-link" href="<?= h(url('admin', ['tab' => 'partners', 'edit_partner' => $partner['id']])) ?>">Edit details →</a></div></div>
-                <?php endforeach; ?>
-                <?php if (!$partners): ?><p class="quiet-copy">No delivery partners yet.</p><?php endif; ?>
+                <?php foreach (store()->deliveryPartners(true) as $partner): render_partner_account($partner); endforeach; ?>
+                <?php if (!store()->deliveryPartners(true)): ?><p class="quiet-copy">No delivery partners yet.</p><?php endif; ?>
             </div>
         </section>
     </div>
@@ -166,9 +168,10 @@ function render_branding_settings(): void
                 </div>
                 <p class="quiet-copy">Use a light page background and dark text. Button text adjusts to your accent colour.</p>
                 <?php render_photo_input('shop_logo_file', 'Shop logo', !empty($settings['shop_logo'])); ?>
+                <?php render_extended_settings($settings); ?>
                 <button class="button button-primary" type="submit">Save store settings</button>
             </form>
-            <form method="post" class="branding-reset-form"><?= csrf_field() ?><input type="hidden" name="action" value="reset_branding"><input type="hidden" name="return_page" value="admin"><input type="hidden" name="return_tab" value="settings"><button class="text-button" type="submit">Restore default name, logo, and colours</button></form>
+            <form method="post" class="branding-reset-form"><?= csrf_field() ?><input type="hidden" name="action" value="reset_branding"><input type="hidden" name="return_page" value="admin"><input type="hidden" name="return_tab" value="settings"><button class="text-button" type="submit">Restore default website settings</button></form>
         </section>
         <section class="admin-card">
             <p class="eyebrow">PREVIEW</p><h3>Try your colours.</h3>
@@ -181,13 +184,13 @@ function render_branding_settings(): void
 function render_order_actions(array $order): void
 {
     ?>
-    <div class="row-actions"><a class="table-action" href="<?= h(url('invoice', ['id' => $order['id'], 'track' => 1])) ?>">Track</a>
+    <div class="row-actions"><a class="text-link" href="<?= h(url('invoice', ['id' => $order['id'], 'track' => 1])) ?>">Track</a>
     <?php if (!in_array($order['status'], ['delivered', 'cancelled'], true)): $canPack = in_array($order['status'], ['placed', 'confirmed'], true); ?>
         <form method="post" class="order-action-form" data-order-action-form>
             <?= csrf_field() ?><input type="hidden" name="action" value="update_order_status"><input type="hidden" name="return_page" value="admin"><input type="hidden" name="return_tab" value="orders"><input type="hidden" name="order_id" value="<?= (int) $order['id'] ?>">
-            <select name="status" aria-label="Order action" data-order-status><?php if ($canPack): ?><option value="packed">Pack order</option><?php endif; ?><option value="cancelled">Cancel order</option></select>
+            <label class="order-action-label">Order action<select name="status" aria-label="Order action" data-order-status><?php if ($canPack): ?><option value="packed">Pack order</option><?php endif; ?><option value="cancelled">Cancel order</option></select></label>
             <label data-cancel-reason>Reason for cancellation<textarea name="note" maxlength="500" rows="3" <?= $canPack ? '' : 'required' ?> placeholder="Explain why this order is being cancelled" aria-label="Reason for cancellation"></textarea></label>
-            <button class="table-action" type="submit">Update order</button>
+            <button class="button button-small button-dark" type="submit">Apply action</button>
         </form>
     <?php elseif ($order['status'] === 'cancelled' && !empty($order['cancellation_reason'])): ?><p class="cancellation-reason"><?= h($order['cancellation_reason']) ?></p><?php endif; ?>
     </div>

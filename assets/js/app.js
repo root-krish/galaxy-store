@@ -125,6 +125,13 @@
     sync();
   });
 
+  document.querySelectorAll('[data-reason-form]').forEach((form) => {
+    const reason = form.querySelector('[name=reason]');
+    const validate = () => reason.setCustomValidity(reason.value.trim().length < 5 ? 'Please explain the reason in at least 5 characters.' : '');
+    reason.addEventListener('input', validate);
+    validate();
+  });
+
   const brandingForm = document.querySelector('[data-branding-form]');
   const brandingPreview = document.querySelector('[data-brand-preview]');
   if (brandingForm && brandingPreview) {

@@ -16,9 +16,27 @@ CREATE TABLE IF NOT EXISTS users (
   profile_image VARCHAR(255) NULL,
   role ENUM('customer', 'admin', 'delivery') NOT NULL DEFAULT 'customer',
   is_active TINYINT(1) NOT NULL DEFAULT 1,
+  auth_version INT UNSIGNED NOT NULL DEFAULT 0,
+  deleted_at DATETIME NULL,
+  account_reason VARCHAR(500) NULL,
+  created_by BIGINT UNSIGNED NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_users_role_active (role, is_active)
+) ENGINE=InnoDB;
+
+-- Accounts are retained after deletion so historical orders and audit events remain valid.
+CREATE TABLE IF NOT EXISTS user_account_events (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  user_id BIGINT UNSIGNED NOT NULL,
+  action ENUM('block', 'restore', 'delete') NOT NULL,
+  reason VARCHAR(500) NOT NULL,
+  actor_id BIGINT UNSIGNED NOT NULL,
+  actor_name VARCHAR(120) NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_account_events_user FOREIGN KEY (user_id) REFERENCES users(id),
+  CONSTRAINT fk_account_events_actor FOREIGN KEY (actor_id) REFERENCES users(id),
+  INDEX idx_account_events_user (user_id, created_at)
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS addresses (
@@ -41,7 +59,9 @@ CREATE TABLE IF NOT EXISTS categories (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   name VARCHAR(100) NOT NULL UNIQUE,
   slug VARCHAR(120) NOT NULL UNIQUE,
-  icon VARCHAR(16) NULL,
+  icon VARCHAR(64) NULL,
+  image_path VARCHAR(255) NULL,
+  color ENUM('lime', 'violet', 'orange', 'blue', 'pink') NOT NULL DEFAULT 'lime',
   is_active TINYINT(1) NOT NULL DEFAULT 1,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
